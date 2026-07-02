@@ -292,3 +292,238 @@ in production.
 - **PocketIC integration tests + budget-regression CI gate** — unit + curl-level e2e exist; PocketIC harness is the follow-up.
 - **Init-instruction measurement** — requires PocketIC/instrumented install; per-message numbers are measured via `ic.performance_counter`.
 - dfx prints a deprecation notice pointing at `icp-cli`; staying on dfx for the MVP since Kybra's extension targets it.
+
+---
+
+# v1.1 build — "Safe & Capable" (2026-07-02)
+
+Spec: ROADMAP.MD (v1.1 section). Theme: eliminate ICP's determinism
+footguns and expose its differentiated capabilities (threshold signing,
+strong randomness, external data) behind ordinary-looking Python, without
+growing the concept budget. Built with parallel agents; every module
+landed with unit tests; Phase-0 safety net (audit + CI + size gate) first,
+per ratified decision #2/#4.
+
+## Repo hygiene (same day)
+GitHub remote is live (github.com/Sweet-Papa-Technologies/PYRE). The
+initial push had accidentally included scripts/bls-verify/node_modules
+(926 files) and a garbage commit message (a litellm error string). Fixed
+by rewriting the single-commit history: node_modules/ added to .gitignore,
+`git rm -r --cached`, amend + force-push. Rule: never trust an
+auto-generated commit message you didn't read.
+
+## Phase 0a — stdlib support-matrix audit (docs/stdlib-matrix.md)
+Probed all 217 public `sys.stdlib_module_names` in-canister
+(examples/stdlib_audit, kept in repo + dfx.json): **142 ok / 75 clean
+import-errors / 0 traps.** Root causes: no _socket (socket, ssl,
+http.client, urllib.request, smtplib, email.message), no _signal
+(subprocess, unittest, platform), no select (asyncio), missing C
+extensions (sqlite3, ctypes, bz2, lzma, zoneinfo, mmap).
+
+**The audit's two headline findings:**
+1. **In-canister entropy sources are CONSTANT STUBS, not merely
+   nondeterministic.** `random.random()` restarts the identical stream
+   every message; `uuid.uuid4()` returns the *same UUID forever*
+   (10b0a742-f1e4-4238-a7a4-5cae054ec21c); `os.urandom(8)`/`secrets.*`
+   return fixed bytes — in updates as well as queries. Only
+   `management_canister.raw_rand()` is real entropy. This upgraded
+   pyre.random from "nice DX" to "safety-critical".
+2. **pathlib is broken** (os.chmod unimplemented; also kills zipfile,
+   importlib.metadata/resources). Canister code uses os.path. Corollary
+   gotcha: top-level import success ≠ working package (email, http).
+
+Nice doc story confirmed: `datetime.now()`/`time.time()` ARE `ic.time()`
+(consensus time) to the nanosecond — timestamps are safe; entropy is not.
+hashlib is real and correct (known-answer verified): md5/sha1/sha2
+family/sha3_256/blake2b/blake2s + hmac. blake3 absent. No AEAD anywhere.
+
+## Phase 0b — CI foundation
+- **PocketIC harness** (tests/pocketic/, pocket-ic==3.1.2 + server 13.0.0
+  pinned; scripts/pocketic_setup.sh): 8 canister-level tests against the
+  prebuilt wasm — health query, 404-upgrade path, path params,
+  IC-Certificate presence, write persistence, upgrade survival, and the
+  two budget assertions. **Init measured: 63.24B cycles**
+  (install_chunked_code, deterministic; ≈150B instructions of RustPython
+  boot — threshold 80B). Per-request instructions via pyre_perf_probe:
+  /health 3.37M, /echo 4.17M, /items 5-6M (threshold 7.5M).
+  Kybra-specific handling that cost real effort: PocketIC enforces the
+  2MiB ingress limit → chunked install required; ic-py Vec(Nat8) is
+  byte-at-a-time slow → bulk-blob fast path; back-to-back installs hit
+  CanisterInstallCodeRateLimited → advance_time(60s) retry.
+- **Size/idle gate** (scripts/size_gate.sh + size_thresholds.env, wired
+  into `make budget-gate`): raw + gz wasm per canister vs recorded
+  baselines (~27.3MB raw / ~14.2MB gz; thresholds +10%). Idle-burn proxy
+  documented: ~44M cycles/MB/day (mainnet-measured). "Adding a fat crate
+  fails CI" is now enforceable.
+- **GitHub Actions** (.github/workflows/ci.yml): unit-tests job (fast,
+  dependency-free), wasm-build job (dfxvm + kybra, cached ~/.config/kybra
+  + ~/.cargo, uploads wasm artifact, runs size gate), pocketic job
+  (artifact-fed). publish.yml: release → build → PyPI via trusted
+  publishing. NOTE: wasm-build/pocketic jobs validated locally in shape
+  only — first real push proves them.
+
+## Phase 1 — consensus-safe randomness/UUIDs/time (pyre/prandom.py, ptime.py, puuid.py)
+Two honest tiers:
+- Sync (queries+updates): sha256-counter DRBG seeded per-message from
+  `sha256(tag‖entropy‖canister_id‖ic.time()‖counter)` — identical on
+  every replica by construction → consensus-safe; unique across messages
+  because time advances and the counter persists on the heap. random(),
+  randint() (rejection-sampled, unbiased), choice(), token_hex(), uuid4()
+  (correct v4 version/variant bits).
+- Async (updates only): `await raw_bytes(n)` over management raw_rand
+  (threshold BLS), `await uuid4_strong()`, `await reseed()` mixes real
+  entropy into the DRBG. Rides the existing outcall pump via a
+  RawRandFuture(OutcallFuture) subclass — zero pump changes.
+DX spelling: `from pyre import random as prandom` etc. — implementation
+files are prandom/ptime/puuid because a pyre file named random.py/uuid.py/
+time.py would shadow the stdlib inside Kybra's flattened bundle (the v1.0
+basename lesson, now load-bearing API design). `import pyre.random` as a
+statement deliberately doesn't exist.
+`pyre dev` now scans user code and warns on: import random / uuid.uuid4 /
+datetime.now / time.time / **os.urandom / import secrets** (the last two
+added after the audit's constant-stub finding).
+
+## Phase 3 — threshold signing (pyre/sign.py) — tECDSA only
+**Kybra 0.7.1 has no Schnorr** (tecdsa.py exposes only
+sign_with_ecdsa/ecdsa_public_key, curve variant only secp256k1). Decision:
+ship tECDSA; document Schnorr as CDK-gated rather than hand-rolling a
+custom aaaaa-aa Service for it (mechanism exists — call_raw/candid_encode
+— but hand-built candid for a security API is exactly the kind of
+cleverness v1.1 fences off). Revisit at the next CDK bump.
+Surface: `await sign.sign(msg)` (sha256→64-byte r‖s), sign_digest,
+`await sign.public_key()` (SEC1 compressed), `await sign.jwt(claims)` —
+ES256K JWT, awaitable AND yieldable (generator-composable _AwaitableOp).
+Key names: dfx_test_key default, configure(key_name="key_1") for mainnet;
+30B cycles attached (fee ~26.15B, excess refunded). Futures subclass
+OutcallFuture to ride the pump — same seam as raw_rand; pyre/dev.py
+resolves any future exposing `_resolve_dev()` (sign uses a deterministic
+LOCAL fake key via the pure-python `ecdsa` package, dev-only, loud
+banner). External verification: scripts/verify_signature.py (jwt + raw
+modes, --tamper negative control) — unit-verified against the dev keys;
+e2e_local.sh now has attest → external-verify → tamper-reject checks;
+gate closes on-replica (dfx_test_key) at the next local run [pending
+below]. rest_api example grew /attest + /attest/pubkey.
+
+## Phase 4 — external DB adapters (pyre/adapters/)
+Designed around three platform facts: 13× write amplification, GET/HEAD/
+POST-only, byte-identical consensus on reads.
+- supabase.py (full PostgREST client): chainable select filters;
+  **insert() IS an upsert** (resolution=merge-duplicates) and requires
+  client-generated primary keys (pyre.random.uuid4 — same id on all 13
+  replicas) so fan-out converges to one row; update()=upsert-merge;
+  **delete() refuses with a teaching error** (DELETE verb unreachable —
+  the blessed path is a SQL function via db.rpc(), POST + idempotent);
+  PostgREST errors → typed SupabaseError. Local pure-python percent-encoder
+  (urllib.parse works in-canister but keep the dependency surface minimal).
+- upstash.py (Redis REST): every command is a POST; **non-idempotent
+  commands (INCR/LPUSH/APPEND/…) are refused** unless unsafe_amplified=True,
+  with the pattern "keep exact counters in pyre.kv, mirror with SET".
+docs/adapters.md leads with the amplification tax; standing rule
+"integration, not hot path" stated everywhere. Mainnet leg of the gate
+(real Supabase read + idempotent write under fan-out) queued for the
+mainnet run.
+
+## Phase 5 — Basic auth + logging
+- require_basic() (RFC 7617) alongside require_token: dict of
+  {user: sha256_hexdigest} or callable; constant-time compares on bytes
+  (hmac.compare_digest verified present in RustPython; pure-python
+  fallback shipped anyway); full-dict scan (no user-exists timing leak);
+  WWW-Authenticate realm on 401; malformed anything → 401 never 500;
+  req.user set on success.
+- pyre/log.py: levelled structured logging → ic.print → **retrievable via
+  `dfx canister logs`** (the v1.0 observability gap, closed); stderr in
+  dev; docs/observability.md (logs are a bounded rolling buffer — not an
+  audit trail; controller-visible — never log secrets).
+- docs/secrets-and-outcalls.md: the §7 mandated honest limitation — why
+  secret-bearing outcalls expose keys to node operators, the self-hosted
+  signed-proxy workaround (built on pyre.sign), v1.2 paved path, TEE
+  note, never-a-shared-proxy trust model.
+
+## Packaging
+PyPI name **pyre-icp** (pyre is taken); import stays `pyre`, CLI stays
+`pyre`. Wheel verified in a clean venv: templates ship (15 files),
+`pyre new` works from the installed wheel. One-time PyPI setup required:
+trusted publisher (project pyre-icp, owner Sweet-Papa-Technologies, repo
+PYRE, workflow publish.yml, environment pypi) + matching GitHub
+environment. Known cosmetic wart: `pyre new` copies __pycache__ from
+installed templates (fix: shutil.ignore_patterns in cli.py).
+
+## Still open at this point in v1.1
+- Phase 2 pyre.crypto: Rust-extension investigation in flight (AEAD is
+  the genuine gap; hashing ships over native hashlib per audit).
+- Rust-extension pattern docs (depends on the above's outcome).
+- Local replica regression of the full v1.1 surface + this file's crypto
+  section; then the mainnet verification push (user-funded).
+
+## Phase 2 — pyre.crypto + the Rust-extension seam (the v1.1 Kind-B proof)
+
+**VIABLE — shipped.** Kybra 0.7.1's generated Rust project accepts a
+native-module patch with NO interpreter-level work. The seam: generated
+`.kybra/<c>/src/lib.rs` builds the RustPython VM in exactly two places
+(#[init], #[post_upgrade]) via `Interpreter::with_init`, and the pinned
+RustPython rev exposes `vm.add_native_module()` publicly. The patch is:
+copy one .rs file in, inject 4 pinned dep lines under `[dependencies]`
+(NOT at EOF — the generated Cargo.toml ends with `[patch.crates-io]`),
+add `mod pyre_native;` + one registration line after each of the two
+`add_native_modules(...)` calls. `scripts/build_native.sh` automates it
+(normal build → patch → ~5-8s warm cargo re-run → wasi2ic → wasm lands
+where dfx expects), asserts exactly 2 registration points, and refuses to
+patch if kybra_generate's output shape ever changes.
+
+**Crates (audited RustCrypto only, features trimmed, getrandom OFF —
+no ambient entropy in-canister):** aes-gcm =0.10.3, chacha20poly1305
+=0.10.1, blake3 =1.5.5, blake2 =0.10.6 (already in the dep graph).
+**Measured size deltas:** AEAD +49,315 raw / +17,411 gz; blake3 marginal
++14,950 / +3,887 → INCLUDED (three orders under the 500KB decision bar);
+full extension +70,667 / +26,518 = **+0.26%** against ~10% gate headroom.
+Size gate: PASS.
+
+**In-canister proof (examples/crypto_demo, local):** FIPS/RFC known-answer
+vectors pass; AES-GCM + ChaCha20-Poly1305 round-trip; tamper detected;
+AAD mismatch detected; nonces differ across update calls AND within one
+call; `_pyre_native` survives upgrades (both registration points live).
+
+**pyre/crypto.py surface:** hash/HMAC over native stdlib hashlib/hmac (per
+the ratified "no Rust for what exists" rule); AEAD blob = nonce(12)‖ct‖
+tag(16) (WebCrypto-interoperable, enables BYOK); automatic consensus-safe
+nonces `sha256("pyre-aead-nonce-v1"‖ic.time()‖counter)[:12]` — identical
+across replicas (required), unique per key+message (~2^48 msgs/key
+birthday bound documented); explicit nonce= for power users; keys point at
+`await prandom.raw_bytes(32)`. Threat model unmissable in module + docs/
+crypto.md: canister-held keys are READABLE BY NODE OPERATORS — this
+encrypts against external leakage, not against the platform; vetKeys is
+the v1.2 answer; BYOK/client-side pattern documented meanwhile. Dev shims
+(host only): cryptography + blake3 pip packages.
+
+**Genuine RustPython bug found:** native `hashlib.blake2b` is the fixed
+64-byte variant and REJECTS `digest_size` (the Phase-0 audit had only
+checked the default). `pyre.crypto.blake2b` dispatches: 64 → native,
+other sizes → `_pyre_native.blake2b_var` in-canister.
+
+**Ops notes:** the patched rebuild re-locks Cargo.lock (Kybra regenerates
+it anyway); dfx install accepts the raw patched wasm; a backgrounded
+`dfx start` dies with its parent shell — start detached (nohup).
+
+## v1.1 local regression — final (2026-07-02, late)
+
+- Unit: 230 passed (was 99 at v1.0). PocketIC: 8/8 (thresholds hold after
+  the v1.1 modules: /echo 4.18M, /items 6.02M instructions). Size gate:
+  PASS everywhere — the whole v1.1 python surface cost ~+150KB gz per
+  canister.
+- e2e_local.sh: **20/20** including the new gates: canister-issued
+  ES256K JWT verified EXTERNALLY (scripts/verify_signature.py) + tampered
+  JWT rejected + pyre.log lines visible via `dfx canister logs`.
+- **Phase-3 gate closed on-replica.** Finding along the way: dfx 0.32's
+  local replica does NOT ship the old "dfx_test_key" — its enabled key is
+  **key_1** (the error listed the full set: ecdsa:Secp256k1:key_1,
+  schnorr:Bip340Secp256k1:key_1, schnorr:Ed25519:key_1,
+  vetkd:Bls12_381_G2:key_1). So pyre.sign defaults to "key_1", which now
+  works locally AND on mainnet unchanged. Bonus intel: the replica already
+  has Schnorr + vetKD keys — only the Kybra 0.7.1 binding is missing,
+  confirming Schnorr is purely CDK-gated.
+- Phase-4 adapters: unit-proven (14 tests) + shape-proven against
+  PostgREST/Upstash REST semantics; the mainnet leg of the gate (live read
+  + idempotent write under real 13x fan-out) rides the next mainnet run.
+- Still pending from v1.1: first real push must validate the wasm-build +
+  pocketic GitHub Actions jobs; PyPI trusted-publisher one-time setup;
+  mainnet verification run (user-funded) incl. sign-on-mainnet cost check.

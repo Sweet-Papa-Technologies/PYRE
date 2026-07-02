@@ -116,6 +116,42 @@ if [[ -x .venv-dev/bin/python ]]; then
     fi
 fi
 
+echo "== v1.1: threshold signing (pyre.sign, local key_1) =="
+attest_json="$(curl -sS "$REST/attest")"
+pubkey_json="$(curl -sS "$REST/attest/pubkey")"
+jwt_token="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["jwt"])' "$attest_json" 2>/dev/null || true)"
+pub_hex="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["public_key_hex"])' "$pubkey_json" 2>/dev/null || true)"
+if [[ -n "$jwt_token" && -n "$pub_hex" ]]; then
+    echo "PASS  GET /attest issues a JWT; /attest/pubkey returns the subnet key"
+    PASS=$((PASS + 1))
+    if .venv-dev/bin/python scripts/verify_signature.py jwt "$jwt_token" "$pub_hex" >/dev/null 2>&1; then
+        echo "PASS  external verifier: threshold signature (secp256k1)"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  external verifier rejected the threshold signature"
+        FAIL=$((FAIL + 1))
+    fi
+    if .venv-dev/bin/python scripts/verify_signature.py jwt "$jwt_token" "$pub_hex" --tamper >/dev/null 2>&1; then
+        echo "PASS  external verifier: tampered JWT correctly rejected"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL  external verifier accepted a tampered JWT"
+        FAIL=$((FAIL + 1))
+    fi
+else
+    echo "FAIL  /attest or /attest/pubkey unavailable — attest=$attest_json pubkey=$pubkey_json"
+    FAIL=$((FAIL + 1))
+fi
+
+echo "== v1.1: canister logging surface =="
+if dfx canister logs rest_api 2>/dev/null | grep -q "attestation issued"; then
+    echo "PASS  dfx canister logs shows pyre.log lines"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL  pyre.log line not found in canister logs"
+    FAIL=$((FAIL + 1))
+fi
+
 echo
 echo "passed=$PASS failed=$FAIL"
 [[ "$FAIL" -eq 0 ]]

@@ -15,6 +15,14 @@
         "food_tracker": {
             "type": "kybra",
             "main": "examples/food_tracker/src/main.py"
+        },
+        "stdlib_audit": {
+            "type": "kybra",
+            "main": "examples/stdlib_audit/src/main.py"
+        },
+        "crypto_demo": {
+            "type": "kybra",
+            "main": "examples/crypto_demo/src/main.py"
         }
     }
 }

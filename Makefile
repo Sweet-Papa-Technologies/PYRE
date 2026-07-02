@@ -5,7 +5,7 @@ VENV := venv
 DEV_VENV := .venv-dev
 PY310 := $(HOME)/.pyenv/versions/3.10.7/bin/python
 
-.PHONY: setup sync test dev start stop deploy e2e determinism budgets clean
+.PHONY: setup sync test dev start stop deploy e2e determinism budgets size-gate budget-gate pocketic clean
 
 ## setup: create both venvs (deploy: kybra+pyre, dev: +pytest) and dfx extension
 setup:
@@ -16,7 +16,7 @@ setup:
 	$(VENV)/bin/python -m kybra install-dfx-extension
 	test -d $(DEV_VENV) || $(PY310) -m venv $(DEV_VENV)
 	$(DEV_VENV)/bin/pip install --quiet --upgrade pip
-	$(DEV_VENV)/bin/pip install --quiet pytest -e .
+	$(DEV_VENV)/bin/pip install --quiet pytest pocket-ic==3.1.2 ecdsa cryptography -e .
 
 ## sync: reinstall pyre into the deploy venv (run after editing pyre/)
 sync:
@@ -57,9 +57,21 @@ mainnet-gate:
 mainnet-cost:
 	bash scripts/mainnet_cost.sh
 
-## budget-gate: fail if framework instruction costs regress (CI gate)
-budget-gate:
+## size-gate: fail if wasm size (idle-burn proxy) regresses — no replica needed
+size-gate:
+	bash scripts/size_gate.sh
+
+## budget-gate: fail if wasm size or framework instruction costs regress (CI gate)
+budget-gate: size-gate
 	bash scripts/budget_gate.sh
+
+## pocketic: PocketIC integration tests (harness under tests/pocketic/)
+pocketic:
+	eval "$$(bash scripts/pocketic_setup.sh | tail -1)" && $(DEV_VENV)/bin/pytest tests/pocketic -q
+
+## native: build a canister with the _pyre_native Rust extension (usage: make native C=crypto_demo)
+native: sync
+	. $(VENV)/bin/activate && bash scripts/build_native.sh $(C) --install
 
 ## teardown-mainnet: withdraw cycles then delete (usage: make teardown-mainnet C="rest_api outbound")
 teardown-mainnet:

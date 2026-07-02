@@ -1,7 +1,11 @@
-"""Example A — REST API with persistence (requirements §7)."""
+"""Example A — REST API with persistence (requirements §7).
+
+v1.1 additions: /attest issues a threshold-signed JWT (pyre.sign) —
+no private key exists anywhere; the subnet signs cooperatively.
+"""
 
 from pyre import App, Request, Response
-from pyre import kv
+from pyre import kv, log, sign
 
 app = App()
 
@@ -29,3 +33,16 @@ def get_item(req: Request) -> Response:
     if item is None:
         return Response.json({"error": "not found"}, status=404)
     return Response.json(item)
+
+
+@app.get("/attest", update=True)  # threshold signing is an async system call
+async def attest(req: Request) -> Response:
+    token = await sign.jwt({"sub": req.caller or "anonymous", "iss": "pyre-rest-api"})
+    log.info("attestation issued", sub=req.caller or "anonymous")
+    return Response.json({"jwt": token, "alg": "ES256K"})
+
+
+@app.get("/attest/pubkey", update=True)
+async def attest_pubkey(req: Request) -> Response:
+    pub = await sign.public_key()
+    return Response.json({"public_key_hex": pub.hex(), "curve": "secp256k1"})

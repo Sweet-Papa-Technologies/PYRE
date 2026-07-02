@@ -23,7 +23,14 @@ def _log(message):
 
 
 def resolve_outcall_dev(fut):
-    """Resolve an OutcallFuture with real HTTP + the on-chain transform."""
+    """Resolve an OutcallFuture with real HTTP + the on-chain transform.
+
+    Non-HTTP management futures (pyre.sign, …) carry their own dev
+    resolution and never touch the network here.
+    """
+    if hasattr(fut, "_resolve_dev"):
+        return fut._resolve_dev()
+
     import urllib.error
     import urllib.request
 

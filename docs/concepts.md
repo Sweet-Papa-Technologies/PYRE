@@ -78,7 +78,9 @@ middleware (they're for public, verifiable data).
   PYRE canister is ~1.9B cycles/day (~$0.075/month).
 - Canister state is **readable by node providers**. Never store plaintext
   secrets; store hashes (`pyre.auth` docs show the pattern). PYRE warns at
-  dev time if a kv write looks like a secret.
+  dev time if a kv write looks like a secret. Calling external APIs *with*
+  a secret key hits the same wall at outcall time — a documented v1.1
+  limitation with a workaround: [secrets-and-outcalls.md](secrets-and-outcalls.md).
 - If the balance hits zero the canister freezes (and below the freezing
   threshold it can't even be upgraded) — top up before experiments, and use
   `make teardown-mainnet` to reclaim cycles before deleting anything.

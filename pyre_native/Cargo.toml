@@ -1,0 +1,47 @@
+# pyre_native — dependency manifest for PYRE's native canister crypto module.
+#
+# This crate is NOT built standalone. scripts/build_native.sh copies
+# src/pyre_native.rs into the Kybra-generated canister crate
+# (.kybra/<canister>/src/) and appends the dependency block between the
+# KYBRA-INJECT markers below to the generated Cargo.toml, then rebuilds.
+# This file is the single source of truth for the crate pins.
+#
+# Crate choices (v1.1 Phase 2):
+#   aes-gcm / chacha20poly1305 — RustCrypto AEADs, both externally audited
+#   (NCC Group, 2020). default-features off; `getrandom` is deliberately
+#   NOT enabled: there is no ambient entropy in a canister and nonces are
+#   the Python layer's responsibility.
+#   blake3 — included after measurement: +15KB raw / +4KB gz wasm.
+#   blake2 — variable-output BLAKE2b only (RustPython's native hashlib
+#   blake2b is the fixed 64-byte variant and rejects digest_size); the
+#   crate is already in the canister dep graph via rustpython-stdlib, so
+#   the pin (=0.10.6) matches its Cargo.lock entry and costs ~nothing.
+
+[package]
+name = "pyre_native"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+path = "src/pyre_native.rs"
+
+[dependencies]
+# BEGIN KYBRA-INJECT (copied verbatim into the generated Cargo.toml)
+aes-gcm = { version = "=0.10.3", default-features = false, features = ["aes", "alloc"] }
+chacha20poly1305 = { version = "=0.10.1", default-features = false, features = ["alloc"] }
+blake3 = { version = "=1.5.5", default-features = false }
+blake2 = { version = "=0.10.6", default-features = false }
+# END KYBRA-INJECT
+
+# Present only so `cargo metadata`/IDEs resolve; the real build gets these
+# from the generated canister crate (same git rev Kybra pins).
+[dependencies.rustpython-vm]
+git = "https://github.com/demergent-labs/RustPython"
+rev = "e87c5ddc56ac94fc5dc42aedb1e03bee21e5b9b7"
+default-features = false
+features = ["ic"]
+
+[dependencies.rustpython-derive]
+git = "https://github.com/demergent-labs/RustPython"
+rev = "e87c5ddc56ac94fc5dc42aedb1e03bee21e5b9b7"
+default-features = false

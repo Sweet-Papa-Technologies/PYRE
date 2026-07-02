@@ -8,6 +8,7 @@ against the network's root of trust instead of trusting a server.
 
 **Docs:** [quickstart](docs/quickstart.md) · [concepts](docs/concepts.md) ·
 [API reference](docs/api.md) · [troubleshooting](docs/troubleshooting.md) ·
+[stdlib support matrix](docs/stdlib-matrix.md) ·
 reference app: [examples/food_tracker](examples/food_tracker/src/app.py)
 
 ```python
@@ -43,7 +44,34 @@ async def quote(req):
     return Response.json({"upstream_status": resp.status, "data": resp.json()})
 ```
 
+And ICP's genuinely differentiated capabilities read like ordinary Python
+(v1.1 — every one opt-in, none required for a CRUD app):
+
+```python
+from pyre import random as prandom, time as ptime, sign
+from pyre.adapters import supabase
+
+@app.get("/id")
+def new_id(req):
+    return Response.json({"id": prandom.uuid4()})   # consensus-safe; naive uuid4 warns in dev
+
+@app.get("/attest", update=True)
+async def attest(req):
+    token = await sign.jwt({"sub": req.caller, "iat": ptime.now()})
+    return Response.json({"jwt": token})            # threshold-signed: no private key exists
+
+@app.get("/external", update=True)
+async def external(req):
+    db = supabase.Client(url=SUPA_URL, anon_key=SUPA_KEY)
+    return Response.json(await db.table("items").select().limit(10))
+```
+
 ## Quick start
+
+From PyPI: `pip install pyre-icp` — the distribution is `pyre-icp`, but the
+import package and the CLI are both `pyre`.
+
+Working from a clone of this repo:
 
 ```bash
 make setup          # venvs (Python 3.10.7 via pyenv), kybra, dfx extension
@@ -110,26 +138,28 @@ DECISIONS.md for measured numbers.
 
 ```
 pyre/                  the framework (pure Python 3.10; CDK-free except main.py glue)
-  app.py routing.py    Flask-style App, path params, query/update mapping
+  application.py routing.py  Flask-style App, hooks, error handlers, query/update mapping
+  certification.py     response verification v2 — certified reads (pure Python)
   gateway.py           http_request / http_request_update adapter (dict-level)
-  kv.py                JSON KV over stable memory — survives upgrades
-  transform.py         the default determinism transform (allowlist)
-  outcall.py           OutcallFuture + the async pump over Kybra's generator model
-  compat/urllib_request.py   the urllib shim
-  compat/_stubs.py     socket/threading/... raise NotImplementedError with guidance
-  dev.py cli.py        `pyre dev` local runner and `pyre new`
-examples/
-  rest_api/            Example A — REST + persistence
-  outbound/            Example B — outcall through the shim
-  phase1_spike/        framework-free outcall determinism spike (the go/no-go gate)
-tests/unit/            41 pytest tests, no replica needed
-scripts/               e2e_local.sh, determinism_test.sh, measure_budgets.sh
-DECISIONS.md           pinned platform facts + measured budgets
+  kv.py data.py        stable-memory KV + collections with schema & lazy migration
+  auth.py cors.py validation.py   bearer/API-key + Basic auth, CORS, dict-schema 400s
+  prandom.py ptime.py puuid.py    consensus-safe randomness/UUIDs/time (v1.1)
+  sign.py              threshold tECDSA signing + ES256K JWTs (v1.1)
+  log.py               structured logging retrievable via `dfx canister logs` (v1.1)
+  adapters/            Supabase + Upstash over outcalls, amplification-aware (v1.1)
+  transform.py outcall.py compat/  determinism transform, async pump, urllib shim
+  dev.py cli.py        `pyre dev` local runner, `pyre new`, footgun warnings
+examples/              rest_api · outbound · phase1_spike · food_tracker · stdlib_audit
+tests/                 unit/ (~200 tests, no replica) + pocketic/ (canister-level)
+scripts/               e2e, determinism gate, budget/size gates, verifiers, teardown
+DECISIONS.md           pinned platform facts + every measured number
 ```
 
-## Scope fences (MVP)
+## Scope fences
 
-Pure Python only — no C extensions, no Pydantic, no `pip` story yet. No
-sockets/threads/filesystem (stubbed with helpful errors). No auth, no
-streaming, no websockets. Mainnet deploy works via `dfx deploy --network ic`
-but the acceptance runs in this repo target the local replica.
+Pure Python only — no C extensions, no Pydantic. No sockets/threads (stubbed
+with guidance), no websockets/streaming. Secret-bearing outcalls (calling
+Stripe/OpenAI with a private key) are a
+[documented limitation](docs/secrets-and-outcalls.md) until v1.2's signed
+proxy. Mainnet-proven: certification, determinism, and costs are validated
+on ICP mainnet (see DECISIONS.md).

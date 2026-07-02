@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import re
 import shutil
 import sys
 
@@ -14,6 +15,7 @@ RESERVED_BASENAMES = {
     "application", "http_types", "routing", "gateway", "kv", "data", "auth",
     "cors", "validation", "certification", "transform", "outcall", "errors",
     "dev", "cli", "_runtime", "_stubs", "urllib_request",
+    "prandom", "ptime", "puuid",
     # kybra-internal modules
     "http", "basic", "bitcoin", "tecdsa", "principal",
 }
@@ -36,6 +38,87 @@ def warn_reserved(directory):
             "pyre: WARNING — %s uses a reserved module basename; Kybra's bundler "
             "will silently clobber it on deploy. Rename the file. (Reserved: %s)"
             % (path, ", ".join(sorted(RESERVED_BASENAMES))),
+            file=sys.stderr,
+        )
+
+
+# Nondeterminism footguns: update calls execute replicated across ~13 nodes,
+# so host entropy / wall-clock sources compute a DIFFERENT value on every
+# replica — breaking consensus or silently diverging. Scanned by `pyre dev`.
+FOOTGUN_PATTERNS = (
+    (
+        re.compile(r"(?:^|\s)(?:import\s+random\b|from\s+random\s+import\b)"),
+        "use pyre.random (from pyre import random as prandom) — naive random "
+        "draws per-replica entropy and breaks consensus in update calls",
+    ),
+    (
+        re.compile(r"(?:^|\s)(?:import\s+uuid\b|from\s+uuid\s+import\b)|\buuid\.uuid4\s*\("),
+        "use pyre.random.uuid4() / await pyre.random.uuid4_strong() — "
+        "uuid.uuid4 draws per-replica entropy and breaks consensus in update calls",
+    ),
+    (
+        re.compile(r"\bdatetime\.(?:now|utcnow)\s*\(|\btime\.time(?:_ns)?\s*\("),
+        "use pyre.time (from pyre import time as ptime) — wall-clock time "
+        "differs on every replica; ptime wraps the consensus-safe ic.time()",
+    ),
+    (
+        re.compile(
+            r"(?:^|\s)(?:import\s+secrets\b|from\s+secrets\s+import\b)"
+            r"|\bos\.urandom\s*\("
+        ),
+        "use await pyre.random.raw_bytes(n) — in-canister os.urandom/secrets "
+        "are CONSTANT stubs under Kybra (the same bytes every call, forever); "
+        "they are never a source of randomness, let alone a safe one",
+    ),
+)
+
+# Lines that already use the pyre-blessed spellings never warn.
+_PYRE_BLESSED = re.compile(r"(?:^|\s)(?:from\s+pyre\b|import\s+pyre\b)|\bpyre\.")
+
+# Directories that hold framework/vendored code, not the user's app.
+_SKIP_DIRS = {"pyre", "kybra", "site-packages", "node_modules", "__pycache__"}
+
+
+def check_footguns(directory):
+    """Scan user .py files for nondeterminism footguns.
+
+    Returns a list of (path, lineno, message). Line-based on purpose:
+    cheap, obvious, and good enough for a dev-time warning (comment lines
+    and pyre-blessed imports are excluded; pyre's own modules are skipped).
+    """
+    findings = []
+    for root, dirs, files in os.walk(directory):
+        dirs[:] = [
+            d for d in dirs
+            if d not in _SKIP_DIRS and not d.startswith(".") and d != "venv"
+        ]
+        for name in sorted(files):
+            stem, ext = os.path.splitext(name)
+            if ext != ".py" or stem in RESERVED_BASENAMES:
+                continue  # framework files are exempt (and already warned on)
+            path = os.path.join(root, name)
+            try:
+                with open(path, encoding="utf-8", errors="replace") as f:
+                    lines = f.readlines()
+            except OSError:
+                continue
+            for lineno, line in enumerate(lines, start=1):
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                if _PYRE_BLESSED.search(stripped):
+                    continue
+                for pattern, message in FOOTGUN_PATTERNS:
+                    if pattern.search(stripped):
+                        findings.append((path, lineno, message))
+                        break  # one warning per line is plenty
+    return findings
+
+
+def warn_footguns(directory):
+    for path, lineno, message in check_footguns(directory):
+        print(
+            "pyre: WARNING — %s:%d: %s" % (path, lineno, message),
             file=sys.stderr,
         )
 
@@ -98,7 +181,9 @@ def cmd_dev(args):
     candidates = [args.app] if args.app else ["src/app.py", "app.py"]
     for candidate in candidates:
         if candidate and os.path.exists(candidate):
-            warn_reserved(os.path.dirname(os.path.abspath(candidate)) or ".")
+            app_dir = os.path.dirname(os.path.abspath(candidate)) or "."
+            warn_reserved(app_dir)
+            warn_footguns(app_dir)
             app = _load_app(candidate)
             serve(app, host=args.host, port=args.port)
             return 0

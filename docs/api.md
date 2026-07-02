@@ -89,6 +89,27 @@ app.before_request(auth.require_token(
 401 with `www-authenticate` on failure; OPTIONS preflights pass through.
 Store token **hashes** in state, never tokens (see module docstring).
 
+```python
+import hashlib
+
+app.before_request(auth.require_basic(
+    users={"alice": hashlib.sha256(b"s3cret").hexdigest()},
+    # or a callable: users=lambda username, password: bool
+    realm="pyre",                               # WWW-Authenticate realm
+    exempt=("/health",)))
+```
+
+HTTP Basic (RFC 7617): parses `Authorization: Basic <base64(user:pass)>`,
+UTF-8 credentials, constant-time comparison. 401 carries
+`WWW-Authenticate: Basic realm="<realm>"`; OPTIONS preflights pass through.
+On success the username is available as `req.user`. Store password
+**hashes** in the dict (sha256 hexdigest), same guardrail as tokens.
+
+Note: auth protects your *inbound* routes. For calling third-party APIs
+that need a secret key (Stripe/OpenAI), see
+[secrets-and-outcalls.md](secrets-and-outcalls.md) — a documented
+limitation in v1.1.
+
 ## pyre.compat.urllib_request — outbound HTTPS
 
 ```python
@@ -109,3 +130,53 @@ async def quote(req):
 Generator style works too: `resp = yield urllib.urlopen(...)`.
 Typed errors: `OutcallFailed` (with IPv6 hint when it smells like DNS),
 `ResponseTooLarge`, `OutcallInQueryContext`, `UpstreamHTTPError`.
+
+## pyre.random / pyre.uuid / pyre.time — consensus-safe entropy & clocks
+
+See [random-uuid-time.md](random-uuid-time.md). Naive `random`, `uuid4`,
+`datetime.now`, `os.urandom`, and `secrets` are consensus footguns (or
+constant stubs) in-canister; `pyre dev` warns when it sees them.
+
+## pyre.sign — threshold signing (tECDSA)
+
+```python
+from pyre import sign
+
+sign.configure(key_name="test_key_1")   # default "key_1" works locally AND on mainnet
+
+@app.get("/attest", update=True)
+async def attest(req):
+    token = await sign.jwt({"sub": req.caller, "iat": ptime.now()})
+    return Response.json({"jwt": token})          # alg ES256K, no key to steal
+```
+
+- `await sign.sign(message)` → 64-byte secp256k1 signature (r‖s) over
+  sha256(message); `sign.sign_digest(digest32)` for precomputed digests.
+- `await sign.public_key()` → 33-byte SEC1 compressed key; verify anywhere:
+  `python scripts/verify_signature.py jwt <token> <pubkey-hex>`.
+- `derivation_path=("users", user_id)` gives each purpose its own key.
+- Costs ~26B cycles per signature on mainnet (attached automatically,
+  excess refunded). Update-only, like all system calls.
+- Kybra 0.7.1 exposes tECDSA only; threshold **Schnorr lands when the CDK
+  does**. This module is the keystone for v1.2's `secure_outcall` proxy.
+
+## pyre.log — retrievable canister logging
+
+```python
+from pyre import log
+log.info("item created", id=item_id)     # debug/info/warning/error(+fields)
+log.exception("sync failed", exc, url=url)
+log.set_level("warning")                  # gate emission
+```
+
+Retrieve from a live canister: `dfx canister logs <name> [--network ic]`.
+Rolling buffer — diagnostics, not an audit trail. Never log secrets.
+See [observability.md](observability.md).
+
+## pyre.adapters — external HTTPS databases
+
+Supabase (PostgREST) client and Upstash Redis client over outcalls, with
+idempotent-write shapes that survive the ~13× outcall fan-out. Read
+[adapters.md](adapters.md) before using — the amplification section is
+load-bearing. Integration, not hot path: your primary datastore is
+`pyre.data`.
