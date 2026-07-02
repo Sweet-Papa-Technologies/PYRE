@@ -27,10 +27,12 @@ jobs:
           python-version: "3.10"
           cache: pip
 
-      - name: Install pyre + pytest
+      - name: Install pyre + test deps
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
+          # ecdsa: pyre.sign dev-key shim; cryptography+blake3: pyre.crypto
+          # host shims (AEAD tests skip without them — install so they run)
+          pip install pytest ecdsa cryptography blake3
           pip install -e .
 
       - name: Run unit tests
