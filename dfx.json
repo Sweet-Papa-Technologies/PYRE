@@ -1,0 +1,20 @@
+{
+    "canisters": {
+        "rest_api": {
+            "type": "kybra",
+            "main": "examples/rest_api/src/main.py"
+        },
+        "outbound": {
+            "type": "kybra",
+            "main": "examples/outbound/src/main.py"
+        },
+        "phase1_spike": {
+            "type": "kybra",
+            "main": "examples/phase1_spike/src/main.py"
+        },
+        "food_tracker": {
+            "type": "kybra",
+            "main": "examples/food_tracker/src/main.py"
+        }
+    }
+}

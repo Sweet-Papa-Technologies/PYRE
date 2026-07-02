@@ -1,0 +1,8 @@
+{
+    "canisters": {
+        "__PROJECT_NAME__": {
+            "type": "kybra",
+            "main": "src/main.py"
+        }
+    }
+}

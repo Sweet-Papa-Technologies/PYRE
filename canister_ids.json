@@ -1,0 +1,14 @@
+{
+  "food_tracker": {
+    "ic": "7qabn-fyaaa-aaaal-qxe2a-cai"
+  },
+  "outbound": {
+    "ic": "573y4-2aaaa-aaaal-qxewq-cai"
+  },
+  "phase1_spike": {
+    "ic": "5wyta-miaaa-aaaal-qxexa-cai"
+  },
+  "rest_api": {
+    "ic": "7me34-syaaa-aaaal-qxeya-cai"
+  }
+}
