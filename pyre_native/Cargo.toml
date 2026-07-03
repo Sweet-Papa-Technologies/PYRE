@@ -31,6 +31,13 @@ aes-gcm = { version = "=0.10.3", default-features = false, features = ["aes", "a
 chacha20poly1305 = { version = "=0.10.1", default-features = false, features = ["alloc"] }
 blake3 = { version = "=1.5.5", default-features = false }
 blake2 = { version = "=0.10.6", default-features = false }
+# RS256 / ES256 JWT signature verification (PyreBlog Phase B / pyre.oidc).
+# Verification is ENTROPY-FREE: no getrandom feature is enabled on any of
+# these — RSA/ECDSA *verify* needs no randomness. default-features off keeps
+# std error glue and PEM/PKCS parsing we don't use out of the wasm.
+rsa = { version = "=0.9.6", default-features = false, features = ["sha2"] }
+sha2 = { version = "=0.10.8", default-features = false }
+p256 = { version = "=0.13.2", default-features = false, features = ["ecdsa"] }
 # END KYBRA-INJECT
 
 # Present only so `cargo metadata`/IDEs resolve; the real build gets these

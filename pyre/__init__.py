@@ -29,6 +29,7 @@ from pyre import crypto
 from pyre import data
 from pyre import kv
 from pyre import log
+from pyre import oidc
 from pyre import sign
 from pyre import static
 from pyre import ptime
@@ -62,6 +63,7 @@ __all__ = [
     "crypto",
     "data",
     "log",
+    "oidc",
     "sign",
     "static",
     "random",

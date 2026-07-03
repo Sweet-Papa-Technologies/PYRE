@@ -23,6 +23,14 @@
         "crypto_demo": {
             "type": "kybra",
             "main": "examples/crypto_demo/src/main.py"
+        },
+        "static_demo": {
+            "type": "kybra",
+            "main": "examples/static_demo/src/main.py"
+        },
+        "oidc_spike": {
+            "type": "kybra",
+            "main": "examples/oidc_spike/src/main.py"
         }
     }
 }

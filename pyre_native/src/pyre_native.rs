@@ -65,6 +65,91 @@ pub mod _pyre_native {
         Ok(out)
     }
 
+    /// RS256 — RSASSA-PKCS1-v1_5 signature verification over SHA-256.
+    ///
+    /// Entropy-free and deterministic: no getrandom, no key generation.
+    /// Inputs are exactly what a JWKS entry gives you, base64url-decoded:
+    ///   n         RSA modulus, big-endian bytes
+    ///   e         RSA public exponent, big-endian bytes (usually 0x010001)
+    ///   message   the JWT signing input (ASCII "<header>.<payload>")
+    ///   signature the JWT signature bytes
+    /// Returns True iff the signature is valid. Malformed key material
+    /// (e.g. an absurd modulus) raises ValueError; a well-formed but wrong
+    /// signature returns False — the caller distinguishes "can't check" from
+    /// "checked, invalid".
+    #[pyfunction]
+    fn rsa_pkcs1v15_verify_sha256(
+        n: ArgBytesLike,
+        e: ArgBytesLike,
+        message: ArgBytesLike,
+        signature: ArgBytesLike,
+        vm: &VirtualMachine,
+    ) -> PyResult<bool> {
+        use rsa::{BigUint, Pkcs1v15Sign, RsaPublicKey};
+        use sha2::{Digest, Sha256};
+
+        let n = n.with_ref(|b| b.to_vec());
+        let e = e.with_ref(|b| b.to_vec());
+        let message = message.with_ref(|b| b.to_vec());
+        let signature = signature.with_ref(|b| b.to_vec());
+
+        let modulus = BigUint::from_bytes_be(&n);
+        let exponent = BigUint::from_bytes_be(&e);
+        let key = RsaPublicKey::new(modulus, exponent).map_err(|err| {
+            vm.new_value_error(format!("_pyre_native: invalid RSA public key: {}", err))
+        })?;
+
+        let hashed = Sha256::digest(&message);
+        let scheme = Pkcs1v15Sign::new::<Sha256>();
+        Ok(key.verify(scheme, &hashed, &signature).is_ok())
+    }
+
+    /// ES256 — ECDSA over NIST P-256 (secp256r1) with SHA-256.
+    ///
+    /// Also entropy-free. Inputs from a JWKS EC entry, base64url-decoded:
+    ///   x, y      the 32-byte affine coordinates of the public point
+    ///   message   the JWT signing input
+    ///   signature the 64-byte raw r||s JWT signature
+    /// Returns True iff valid. Malformed point/signature raises ValueError.
+    #[pyfunction]
+    fn ecdsa_p256_verify_sha256(
+        x: ArgBytesLike,
+        y: ArgBytesLike,
+        message: ArgBytesLike,
+        signature: ArgBytesLike,
+        vm: &VirtualMachine,
+    ) -> PyResult<bool> {
+        use p256::ecdsa::signature::Verifier;
+        use p256::ecdsa::{Signature, VerifyingKey};
+        use p256::elliptic_curve::generic_array::GenericArray;
+        use p256::EncodedPoint;
+
+        let x = x.with_ref(|b| b.to_vec());
+        let y = y.with_ref(|b| b.to_vec());
+        let message = message.with_ref(|b| b.to_vec());
+        let signature = signature.with_ref(|b| b.to_vec());
+
+        if x.len() != 32 || y.len() != 32 {
+            return Err(vm.new_value_error(format!(
+                "_pyre_native: ES256 x/y must be 32 bytes each, got {}/{}",
+                x.len(),
+                y.len()
+            )));
+        }
+        let point = EncodedPoint::from_affine_coordinates(
+            GenericArray::from_slice(&x),
+            GenericArray::from_slice(&y),
+            false,
+        );
+        let key = VerifyingKey::from_encoded_point(&point).map_err(|err| {
+            vm.new_value_error(format!("_pyre_native: invalid P-256 public key: {}", err))
+        })?;
+        let sig = Signature::from_slice(&signature).map_err(|err| {
+            vm.new_value_error(format!("_pyre_native: invalid ES256 signature: {}", err))
+        })?;
+        Ok(key.verify(&message, &sig).is_ok())
+    }
+
     fn check_key_nonce(key: &[u8], nonce: &[u8], vm: &VirtualMachine) -> PyResult<()> {
         if key.len() != KEY_LEN {
             return Err(vm.new_value_error(format!(
