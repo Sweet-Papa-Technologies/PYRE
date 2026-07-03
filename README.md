@@ -117,9 +117,11 @@ walks the whole path in ~15 minutes.
 | `pyre.random` / `pyre.uuid` / `pyre.time` | Consensus-safe RNG, UUIDs, timestamps (naive stdlib entropy **fails loudly** in-canister — by design) | [random-uuid-time.md](https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/docs/random-uuid-time.md) |
 | `pyre.crypto` | AES-GCM, ChaCha20-Poly1305, sha2/sha3/blake2/blake3, HMAC — audited RustCrypto under the hood | [crypto.md](https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/docs/crypto.md) |
 | `pyre.sign` | Threshold tECDSA signatures + ES256K JWTs — no private key exists | [api.md](https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/docs/api.md#pyresign--threshold-signing-tecdsa) |
+| `pyre.oidc` *(1.2)* | Verify Google/OIDC RS256/ES256 ID tokens **in-canister** (JWKS cached + determinism-transformed); real sign-in without trusting a server | [oidc.md](https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/docs/oidc.md) |
+| `pyre.static` *(1.2)* | Serve a built SPA (Vue/React/…) **from the canister**, certified index + chunked stable-memory assets; `pyre assets push dist/` | [static-serving.md](https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/docs/static-serving.md) |
 | `pyre.adapters` | Supabase (PostgREST) + Upstash Redis over outcalls, amplification-safe writes | [adapters.md](https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/docs/adapters.md) |
 | `pyre.log` | Structured logging retrievable via `dfx canister logs` | [observability.md](https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/docs/observability.md) |
-| `pyre` CLI | `pyre new` (templates), `pyre dev` (local server + footgun warnings) | [quickstart.md](https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/docs/quickstart.md) |
+| `pyre` CLI | `pyre new` (templates), `pyre dev` (local server + footgun warnings), `pyre assets push` | [quickstart.md](https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/docs/quickstart.md) |
 
 **All docs:**
 [quickstart](https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/docs/quickstart.md) ·

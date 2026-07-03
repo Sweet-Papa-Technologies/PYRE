@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyre-icp"
-version = "1.1.2"
+version = "1.2.0"
 description = "PYRE — Flask-flavored Python on the Internet Computer: certified reads, urllib-shaped outcalls, stable-memory collections"
 requires-python = ">=3.10"
 readme = "README.md"
