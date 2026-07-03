@@ -7,10 +7,12 @@ scripts/seed.sh, which just curls that route.
 from pyrepress import posts as model
 
 ANNOUNCEMENT_MD = """\
-Today we're releasing **PYRE v1.1** — a Flask-flavored Python framework that
-runs your backend *inside* an [Internet Computer](https://internetcomputer.org)
-canister. `pip install pyre-icp`, write routes you already know how to write,
-and deploy an API whose responses clients can cryptographically verify.
+Today [Sweet Papa Technologies](https://sweetpapatechnologies.com) is releasing
+**PYRE v1.1** — a Flask-flavored Python framework that runs your backend
+*inside* an [Internet Computer](https://internetcomputer.org) canister.
+`pip install pyre-icp`, write routes you already know how to write, and deploy
+an API whose responses clients can cryptographically verify. Source and docs
+live at [github.com/Sweet-Papa-Technologies/PYRE](https://github.com/Sweet-Papa-Technologies/PYRE).
 
 ## Why bother?
 

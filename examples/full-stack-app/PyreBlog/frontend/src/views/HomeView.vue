@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import { usePostsStore } from '@/stores/posts'
 import { apiUrl } from '@/api/client'
+import { SITE, PYRE_FEATURES } from '@/config/site'
 import FlameLogo from '@/components/FlameLogo.vue'
 import PostCard from '@/components/PostCard.vue'
 import PostCardSkeleton from '@/components/PostCardSkeleton.vue'
@@ -14,6 +15,20 @@ const posts = usePostsStore()
 const route = useRoute()
 const router = useRouter()
 const feedUrl = apiUrl('/feed.xml')
+
+const copied = ref(false)
+let copyTimer: ReturnType<typeof setTimeout> | undefined
+
+async function copyInstall() {
+  try {
+    await navigator.clipboard.writeText(SITE.pyre.install)
+    copied.value = true
+    if (copyTimer) clearTimeout(copyTimer)
+    copyTimer = setTimeout(() => (copied.value = false), 1600)
+  } catch {
+    /* clipboard unavailable — no-op */
+  }
+}
 
 function selectTag(tag: string | null) {
   router.replace({ name: 'home', query: tag ? { tag } : {} })
@@ -53,21 +68,71 @@ watch(
         <span class="gradient-text">unforgeable by design.</span>
       </h1>
       <p class="hero-sub hero-in d2">
-        PyrePress is a blog that lives inside an Internet Computer smart contract. Every post is
-        cryptographically certified — readers can prove nothing was tampered with. No servers, no
-        middlemen, no trust required.
+        PyrePress is a certified, tamper-proof blog that runs entirely inside an Internet Computer
+        canister — every post is cryptographically verifiable, with no servers or middlemen. And it
+        is itself built with <strong>PYRE</strong>, a Python framework for the Internet Computer.
       </p>
       <div class="hero-badges hero-in d3">
         <span class="hb"><i class="pi pi-verified" /> Cryptographically certified</span>
         <span class="hb"><i class="pi pi-server" /> On-chain, no backend</span>
         <span class="hb"><i class="pi pi-bolt" /> Powered by PYRE</span>
       </div>
+      <div class="hero-cta hero-in d4">
+        <a :href="SITE.pyre.github" target="_blank" rel="noopener">
+          <Button label="Get PYRE" icon="pi pi-github" class="pp-flame" />
+        </a>
+        <a :href="SITE.pyre.docs" target="_blank" rel="noopener">
+          <Button label="Read the docs" icon="pi pi-book" outlined />
+        </a>
+      </div>
+    </section>
+
+    <!-- Built with PYRE -->
+    <section class="pp-container band">
+      <div class="band-head">
+        <span class="band-eyebrow"><i class="pi pi-bolt" /> Built with PYRE</span>
+        <h2 class="band-title">This whole site is a <span class="gradient-text">PYRE app</span></h2>
+        <p class="band-pitch">{{ SITE.pyre.pitch }}</p>
+      </div>
+
+      <div class="install">
+        <code class="install-cmd">{{ SITE.pyre.install }}</code>
+        <button
+          type="button"
+          class="install-copy"
+          :aria-label="copied ? 'Copied' : 'Copy install command'"
+          @click="copyInstall"
+        >
+          <i :class="copied ? 'pi pi-check' : 'pi pi-copy'" />
+          <span>{{ copied ? 'Copied' : 'Copy' }}</span>
+        </button>
+      </div>
+
+      <div class="band-grid">
+        <div v-for="f in PYRE_FEATURES" :key="f.title" class="feature glass">
+          <div class="feature-icon"><i :class="`pi ${f.icon}`" /></div>
+          <h3 class="feature-title">{{ f.title }}</h3>
+          <p class="feature-body">{{ f.body }}</p>
+        </div>
+      </div>
+
+      <div class="band-links">
+        <a :href="SITE.pyre.github" target="_blank" rel="noopener">
+          <i class="pi pi-github" /> View on GitHub
+        </a>
+        <a :href="SITE.pyre.pypi" target="_blank" rel="noopener">
+          <i class="pi pi-box" /> PyPI
+        </a>
+        <a :href="SITE.company.url" target="_blank" rel="noopener">
+          by {{ SITE.company.name }}
+        </a>
+      </div>
     </section>
 
     <!-- Feed -->
     <section class="pp-container feed">
       <div class="feed-head">
-        <h2>Latest posts</h2>
+        <h2>Latest news</h2>
         <a class="rss" :href="feedUrl" target="_blank" rel="noopener">
           <i class="pi pi-rss" /> Subscribe
         </a>
@@ -180,6 +245,9 @@ watch(
 }
 .d3 {
   animation-delay: 270ms;
+}
+.d4 {
+  animation-delay: 360ms;
 }
 @keyframes hero-rise {
   from {
@@ -303,8 +371,169 @@ watch(
   color: var(--pp-amber);
 }
 
+/* Hero CTAs */
+.hero-cta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.hero-cta a {
+  display: inline-flex;
+}
+
+/* Built with PYRE band */
+.band {
+  margin-top: 3rem;
+  padding-top: 2.5rem;
+  padding-bottom: 0.5rem;
+  border-top: 1px solid var(--pp-border);
+}
+.band-head {
+  text-align: center;
+  max-width: 680px;
+  margin: 0 auto 1.5rem;
+}
+.band-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--pp-font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--pp-text-dim);
+}
+.band-eyebrow i {
+  color: var(--pp-amber);
+}
+.band-title {
+  font-size: clamp(1.6rem, 3.5vw, 2.3rem);
+  margin: 0.5rem 0 0.6rem;
+  font-weight: 800;
+}
+.band-pitch {
+  color: var(--pp-text-dim);
+  font-size: 1.02rem;
+  margin: 0;
+}
+
+/* Install pill */
+.install {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0;
+  max-width: 420px;
+  margin: 0 auto 2rem;
+  border: 1px solid var(--pp-border-strong);
+  border-radius: 999px;
+  background: var(--pp-surface);
+  overflow: hidden;
+}
+.install-cmd {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 0.7rem 1.1rem;
+  font-family: var(--pp-font-mono);
+  font-size: 0.92rem;
+  color: var(--pp-text);
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.install-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 1.1rem;
+  border: none;
+  border-left: 1px solid var(--pp-border-strong);
+  background: transparent;
+  color: var(--pp-text-dim);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+.install-copy:hover {
+  color: var(--pp-amber);
+  background: var(--pp-surface-hover);
+}
+
+/* Feature cards */
+.band-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+}
+.feature {
+  padding: 1.5rem;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+.feature:hover {
+  transform: translateY(-4px);
+  border-color: var(--pp-border-strong);
+  box-shadow: var(--pp-shadow);
+}
+.feature-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: var(--pp-radius-sm);
+  background: rgba(255, 138, 60, 0.12);
+  border: 1px solid var(--pp-border);
+  margin-bottom: 0.9rem;
+}
+.feature-icon i {
+  font-size: 1.15rem;
+  color: var(--pp-amber);
+}
+.feature-title {
+  font-size: 1.12rem;
+  margin: 0 0 0.45rem;
+  color: var(--pp-text);
+}
+.feature-body {
+  margin: 0;
+  color: var(--pp-text-dim);
+  font-size: 0.94rem;
+  line-height: 1.6;
+}
+
+/* Band footer links */
+.band-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  margin-top: 1.75rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--pp-text-dim);
+}
+.band-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--pp-text-dim);
+}
+.band-links a:hover {
+  color: var(--pp-amber);
+}
+
 .feed {
-  margin-top: 1.5rem;
+  margin-top: 3rem;
 }
 .feed-head {
   display: flex;
@@ -352,6 +581,11 @@ watch(
   display: flex;
   justify-content: center;
   margin-top: 2rem;
+}
+@media (max-width: 860px) {
+  .band-grid {
+    grid-template-columns: 1fr;
+  }
 }
 @media (max-width: 640px) {
   .grid {

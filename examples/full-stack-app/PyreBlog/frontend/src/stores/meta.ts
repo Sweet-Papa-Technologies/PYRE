@@ -2,9 +2,9 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { api, detectCanisterId } from '@/api/client'
 
-const DEFAULT_TITLE = 'PyrePress'
+const DEFAULT_TITLE = 'PyrePress — PYRE news, served certified'
 const DEFAULT_DESCRIPTION =
-  'A certified, tamper-proof blog running inside an Internet Computer canister — built on PYRE.'
+  'The news channel for PYRE, Flask-flavored Python on the Internet Computer. Every post is a certified, tamper-proof response you can verify against the network.'
 
 // Blog identity. Title/description come from the certified RSS channel;
 // the canister id comes from the hostname or (authoritatively) from the
