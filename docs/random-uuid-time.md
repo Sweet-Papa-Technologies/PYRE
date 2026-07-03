@@ -1,10 +1,25 @@
 # Randomness, UUIDs & timestamps
 
-On ICP, update calls execute **replicated across ~13 nodes**. Anything
-nondeterministic — `random.random()`, `uuid.uuid4()`, `datetime.now()`,
-`time.time()` — computes a *different* value on every replica, which breaks
-consensus (or, in a query, silently gives each caller a different answer).
-PYRE wraps the consensus-safe primitives so you never hit that footgun.
+Two platform facts drive this module:
+
+1. Update calls execute **replicated across ~13 nodes**, so anything
+   nondeterministic would break consensus.
+2. Worse: the canister interpreter has **no entropy source at all** — the
+   v1.1 audit found `uuid.uuid4()`, `os.urandom()`, and `secrets.*` return
+   **constants** in-canister (the *same* UUID and the *same* "random"
+   bytes on every call, forever). Session tokens generated with
+   `secrets.token_hex()` would look random in testing and be identical
+   for every user in production.
+
+PYRE responds on both fronts:
+
+- **Defusal (in-canister):** importing pyre replaces `os.urandom`,
+  `uuid.uuid4`, `secrets.token_*`/`randbits`/`randbelow`/`choice`, and
+  `SystemRandom` with loud `FakeEntropyError` raisers pointing here —
+  silent-wrong becomes a clear failure. (`random.random()` and
+  `datetime`/`time` keep working: not crypto contracts; `pyre dev` warns
+  on them.)
+- **Safe equivalents:** the consensus-safe APIs below.
 
 > **Import caveat:** the real module files are `pyre/prandom.py`,
 > `pyre/ptime.py`, `pyre/puuid.py` (files named `random.py` / `time.py` /

@@ -555,3 +555,40 @@ it anyway); dfx install accepts the raw patched wasm; a backgrounded
   gate. The adapter gate is the one item local can't fake (real
   PostgREST upsert semantics under real 13x fan-out) — needs a
   user-provided free-tier Supabase project (URL + anon key).
+
+## Fake-entropy DEFUSAL (2026-07-03, post-review hardening)
+
+Review question that triggered it: "did we fix the constant-stub modules,
+and why not fix them in place?" Answer recorded:
+
+**Why an in-place fix is impossible-or-dishonest:** the constants come
+from the interpreter itself (RustPython/WASI has no entropy source), and
+the platform's only real entropy — raw_rand — is an ASYNC system call.
+os.urandom/secrets are synchronous APIs with a cryptographic-strength
+contract; the only thing we could put behind them synchronously is the
+time+counter DRBG, which is consensus-safe but PREDICTABLE — silently
+wiring it into `secrets` would turn a visible footgun into an invisible
+vulnerability (session tokens derivable from ic.time()). No existing
+library can fix this either: nothing can conjure entropy the platform
+doesn't expose synchronously. Hence: explicit safe APIs + loud failure.
+
+**What shipped:** install_stubs() (already the socket/threading pattern)
+now also DEFUSES the liars in-canister: os.urandom, uuid.uuid4,
+secrets.token_bytes/hex/urlsafe/randbits/randbelow/choice, and
+secrets/random.SystemRandom all raise FakeEntropyError with pyre.random
+guidance. secrets.compare_digest untouched (not entropy); uuid3/uuid5
+untouched (hash-based, legitimately deterministic); plain random.random /
+datetime / time keep working (non-crypto; dev-warned). Every patch is
+individually best-effort (a failed setattr degrades to the old
+warned-footgun behavior rather than bricking @init).
+
+**Proven in-canister** (stdlib_audit, now importing pyre precisely to make
+probe_footguns the defusal acceptance test): uuid.uuid4/os.urandom/
+secrets.token_hex → ERR:FakeEntropyError with guidance; random/datetime/
+time/ic.time still report values. setattr on RustPython's Rust-backed
+modules sticks. 237 unit tests green (defusal + restore-leak coverage).
+
+Note: mainnet rest_api/food_tracker were upgraded hours BEFORE this
+hardening — they run pre-defusal builds (harmless: neither touches the
+defused APIs). Picked up at the next natural upgrade; the v1.1.0 tag
+includes it.

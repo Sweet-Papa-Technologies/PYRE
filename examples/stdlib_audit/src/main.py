@@ -1,18 +1,25 @@
 """PYRE v1.1 Phase-0 stdlib support-matrix audit canister.
 
-Framework-free by design (like phase1_spike): results must reflect the
-Kybra 0.7.1 / RustPython platform, not PYRE code.
+Originally framework-free; now imports pyre so probe_footguns doubles as
+the acceptance test for the fake-entropy DEFUSAL (pyre's install_stubs
+replaces the constant-returning os.urandom / uuid.uuid4 / secrets.* with
+loud FakeEntropyError raisers at import time in-canister). Expected
+probe_footguns output since the defusal: random/datetime/time still
+report values; uuid.uuid4, os.urandom and secrets report
+ERR:FakeEntropyError with pyre.random guidance.
 
   audit_import(names)  — comma-separated module names; per-module __import__
                          probe, compact `name=ok` / `name=ERR:...` results.
   probe_footguns()     — exercises the determinism footguns (random, uuid,
                          datetime.now, time.time, os.urandom, secrets,
-                         ic.time) and reports the actual values seen.
+                         ic.time) and reports the actual values/errors.
   probe_hashlib()      — checks hashlib primitives against known vectors
                          for b"abc", plus hmac.
 """
 
 from kybra import ic, query
+
+import pyre  # noqa: F401 — side effect under test: entropy defusal
 
 
 @query
