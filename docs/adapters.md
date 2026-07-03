@@ -10,6 +10,41 @@ Both adapters ride PYRE's HTTPS outcalls, so all outcall rules apply:
 `update=True` routes only, IPv6-reachable hosts, ~2s consensus latency,
 and — the important one — **amplification**.
 
+## Reachability: IPv6 required (check this FIRST)
+
+ICP replicas reach the internet over **IPv6 only**. Before wiring an
+adapter to any provider, check its API hostname:
+
+```bash
+dig AAAA <project-ref>.supabase.co     # empty = unreachable from mainnet
+```
+
+Measured 2026-07: **Supabase and Upstash are both IPv4-only** (no AAAA on
+any of their domains) — direct mainnet outcalls to them fail with a DNS
+error. Airtable, Firestore, and Notion are dual-stack. The local replica
+uses your machine's network, so everything works in local testing —
+mainnet is where IPv4-only bites (this exact asymmetry cost us a v1.0
+afternoon).
+
+**The relay pattern** for IPv4-only providers: a 6-line Cloudflare Worker
+(workers.dev is dual-stack) forwards requests verbatim; DB semantics —
+auth headers, PostgREST upserts, everything — pass through untouched:
+
+```js
+export default {
+  async fetch(req) {
+    const url = new URL(req.url);
+    url.hostname = "<project-ref>.supabase.co";
+    return fetch(new Request(url, req));
+  }
+}
+```
+
+Point the adapter's `url=` at `https://<worker>.workers.dev` and you're
+done. (The worker sees your traffic — same trust consideration as any
+relay; see [secrets-and-outcalls](secrets-and-outcalls.md). The v1.2
+signed proxy will subsume this.)
+
 ## The amplification tax (read this once)
 
 One outcall is executed by *every replica on the subnet*: measured **13×**

@@ -592,3 +592,22 @@ Note: mainnet rest_api/food_tracker were upgraded hours BEFORE this
 hardening — they run pre-defusal builds (harmless: neither touches the
 defused APIs). Picked up at the next natural upgrade; the v1.1.0 tag
 includes it.
+
+## Phase-4 finding: Supabase AND Upstash are IPv4-only (2026-07-03)
+
+When the Supabase SaaS outage cleared, the fan-out gate hit a harder
+wall: `dig AAAA` is EMPTY for *.supabase.co (project hosts and apexes)
+and for upstash.io/aws.upstash.io — both flagship adapter providers are
+unreachable from mainnet outcalls (IPv6-only egress; empirically proven
+fatal in v1.0 via worldtimeapi). Dual-stack providers measured the same
+day: api.airtable.com, firestore.googleapis.com, api.notion.com,
+workers.dev. The local replica masks this completely (host network is
+dual-stack) — docs/adapters.md now leads with the `dig AAAA` check and a
+6-line Cloudflare Worker relay pattern (workers.dev has AAAA; forwards
+verbatim, PostgREST semantics intact).
+
+Consequence for the gate: adapter correctness + real-PostgREST semantics
+validate from the LOCAL replica against the real Supabase project; the
+mainnet 13x fan-out leg needs the user's relay worker (or an IPv6-capable
+provider) in front. Elevates the v1.2 signed-proxy from "secrets feature"
+to "the standing answer for IPv4-only SaaS as well."
