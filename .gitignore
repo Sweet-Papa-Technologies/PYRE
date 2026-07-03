@@ -11,3 +11,4 @@ venv/
 .kybra/
 
 node_modules/
+examples/outbound/src/supa_config.py
