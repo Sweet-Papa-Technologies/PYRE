@@ -1,22 +1,23 @@
 name: publish
 
 # Publishes the `pyre-icp` distribution to PyPI when a GitHub release is
-# published. Uses PyPI TRUSTED PUBLISHING (OIDC) — no API token secrets.
+# published. `pyre-icp` exists on PyPI (owner: sweetpapatech; 1.1.x were
+# uploaded with an API token). This workflow prefers TRUSTED PUBLISHING
+# (OIDC) — one-time setup below; until that's configured, publish manually
+# with `python -m build && twine upload dist/*` (token in ~/.pypirc).
 #
-# ── One-time setup required on PyPI (do this BEFORE the first release) ─────
-# 1. Log in to https://pypi.org and go to
-#    "Your projects" → "Publishing" (https://pypi.org/manage/account/publishing/).
-# 2. Under "Add a new pending publisher" (the project `pyre-icp` doesn't exist
-#    yet — trusted publishing will create it on first publish), enter:
-#       PyPI Project Name : pyre-icp
+# ── One-time setup to make this workflow work (recommended) ────────────────
+# 1. https://pypi.org/manage/project/pyre-icp/settings/publishing/ →
+#    "Add a new publisher":
 #       Owner             : Sweet-Papa-Technologies
 #       Repository name   : PYRE
 #       Workflow name     : publish.yml
 #       Environment name  : pypi
-# 3. (Recommended) In the GitHub repo: Settings → Environments → create an
-#    environment named "pypi" (optionally with required reviewers so a human
-#    approves each publish).
-# Then: create a GitHub release (tag e.g. v0.2.0) and this workflow publishes.
+# 2. GitHub repo: Settings → Environments → create environment "pypi"
+#    (optionally with required reviewers so a human approves each publish).
+# Then: publishing = creating a GitHub release. Nothing to rotate, no
+# long-lived secrets. `skip-existing` makes re-runs of already-uploaded
+# versions succeed instead of erroring.
 
 on:
   release:
@@ -61,3 +62,5 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
