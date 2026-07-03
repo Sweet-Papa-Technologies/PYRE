@@ -10,25 +10,26 @@ Both adapters ride PYRE's HTTPS outcalls, so all outcall rules apply:
 `update=True` routes only, IPv6-reachable hosts, ~2s consensus latency,
 and — the important one — **amplification**.
 
-## Reachability: IPv6 required (check this FIRST)
+## Reachability: IPv6 first, IPv4 via the platform's fallback
 
-ICP replicas reach the internet over **IPv6 only**. Before wiring an
-adapter to any provider, check its API hostname:
+ICP replicas prefer **IPv6**, and neither Supabase nor Upstash publishes
+AAAA records (measured 2026-07; Airtable, Firestore, and Notion are
+dual-stack). That is *not* fatal: the platform runs an **automatic IPv4
+fallback** (a DFINITY-operated proxy path), and we verified it live —
+a 13-node mainnet subnet reached IPv4-only Supabase and passed consensus.
+The fallback cannot tamper with responses (consensus still runs over the
+result); like any intermediary, it can at worst block them.
 
-```bash
-dig AAAA <project-ref>.supabase.co     # empty = unreachable from mainnet
-```
+Two practical rules:
 
-Measured 2026-07: **Supabase and Upstash are both IPv4-only** (no AAAA on
-any of their domains) — direct mainnet outcalls to them fail with a DNS
-error. Airtable, Firestore, and Notion are dual-stack. The local replica
-uses your machine's network, so everything works in local testing —
-mainnet is where IPv4-only bites (this exact asymmetry cost us a v1.0
-afternoon).
-
-**The relay pattern** for IPv4-only providers: a 6-line Cloudflare Worker
-(workers.dev is dual-stack) forwards requests verbatim; DB semantics —
-auth headers, PostgREST upserts, everything — pass through untouched:
+1. **Test your specific provider from mainnet before depending on it** —
+   the fallback is not a guarantee for every host (an IPv4-only API we
+   tried in v1.0 failed with a DNS error where Supabase now succeeds).
+   `dig AAAA <host>` tells you whether you're on the native path or the
+   fallback path.
+2. If a provider fails from mainnet anyway, a 6-line dual-stack relay
+   restores reachability (workers.dev has AAAA; forwards verbatim, DB
+   semantics untouched):
 
 ```js
 export default {
@@ -40,10 +41,9 @@ export default {
 }
 ```
 
-Point the adapter's `url=` at `https://<worker>.workers.dev` and you're
-done. (The worker sees your traffic — same trust consideration as any
-relay; see [secrets-and-outcalls](secrets-and-outcalls.md). The v1.2
-signed proxy will subsume this.)
+(The relay sees your traffic — same trust consideration as any
+intermediary; see [secrets-and-outcalls](secrets-and-outcalls.md). The
+v1.2 signed proxy subsumes this.)
 
 ## The amplification tax (read this once)
 

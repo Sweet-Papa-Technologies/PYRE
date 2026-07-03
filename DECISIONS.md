@@ -611,3 +611,35 @@ validate from the LOCAL replica against the real Supabase project; the
 mainnet 13x fan-out leg needs the user's relay worker (or an IPv6-capable
 provider) in front. Elevates the v1.2 signed-proxy from "secrets feature"
 to "the standing answer for IPv4-only SaaS as well."
+
+## Phase-4 fan-out gate: PASSED ON MAINNET (2026-07-03) — and a doctrine correction
+
+Architect review pushed a re-test of the "IPv4-only = unreachable"
+conclusion, and the re-test won: **ICP's automatic IPv4 fallback
+(DFINITY-operated proxy path) reached IPv4-only Supabase from the
+13-node subnet and passed consensus.** The earlier doctrine is corrected
+in docs/adapters.md: IPv6-native preferred, fallback verified live,
+BUT test per-provider (v1.0's worldtimeapi still failed with a DNS error
+on the same class of host — the fallback is not a universal guarantee).
+
+**The gate itself:**
+- Local leg (real PostgREST semantics): adapter write/filtered-read/
+  ordered-read all correct against the user's real Supabase project;
+  13 byte-identical replayed upserts (what amplification delivers) →
+  exactly 1 row (201 then 12x 200 on the same row).
+- Mainnet leg (real fan-out): two /supa/write updates on outbound
+  (573y4), each amplified across the subnet → /supa/rows/{id} returned
+  **count: 1** both times; deterministic ordered read passed consensus.
+- Implicit Phase-1 mainnet proof, free of charge: each replica composes
+  the outcall request independently, so count==1 REQUIRES
+  pyre.random.uuid4() to have produced byte-identical ids on all 13
+  replicas. Consensus-safe randomness is thereby proven on mainnet, not
+  just in PocketIC.
+
+With this, every v1.1 gate is closed: Phase 0 (audit, CI, size gate),
+Phase 1 (consensus-safe entropy — incl. mainnet, above), Phase 2 (AEAD
+in-canister via _pyre_native), Phase 3 (mainnet key_1 signing, 26.19B/
+attest, external verify), Phase 4 (this), Phase 5 (Basic auth, logging,
+extension docs, secrets limitation). Plus the post-review fake-entropy
+DEFUSAL. v1.1.0 tagged; PyPI release is one user-gated step away
+(trusted publisher + GitHub release).
