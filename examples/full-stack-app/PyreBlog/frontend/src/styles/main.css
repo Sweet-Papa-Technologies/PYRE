@@ -1,0 +1,429 @@
+/* ============================================================
+   PyrePress — flame-themed design system (dark-first)
+   Palette derived from the PYRE low-poly flame logo:
+   cyan spark → amber core → ember red on deep space navy.
+   ============================================================ */
+
+/* Display font, bundled locally — no CDN requests at runtime (canister CSP).
+   Variable weight 300-700, latin subset, ~22 KB. */
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('../assets/fonts/space-grotesk-latin.woff2') format('woff2');
+}
+
+:root {
+  /* Brand ramp */
+  --pp-cyan: #5ad1ff;
+  --pp-cyan-soft: #8fe3ff;
+  --pp-amber: #ffb347;
+  --pp-orange: #ff8a3c;
+  --pp-ember: #ff5a4d;
+  --pp-red: #f43f5e;
+
+  --pp-flame-gradient: linear-gradient(135deg, #5ad1ff 0%, #ffb347 48%, #ff5a4d 100%);
+  --pp-flame-gradient-v: linear-gradient(180deg, #5ad1ff 0%, #ffb347 55%, #ff5a4d 100%);
+  --pp-ember-gradient: linear-gradient(120deg, #ff8a3c 0%, #ff5a4d 60%, #f43f5e 100%);
+
+  /* Dark surfaces (default) */
+  --pp-bg: #0b0e18;
+  --pp-bg-2: #0e1220;
+  --pp-surface: rgba(22, 27, 45, 0.72);
+  --pp-surface-solid: #141a2c;
+  --pp-surface-hover: rgba(30, 37, 60, 0.85);
+  --pp-border: rgba(120, 140, 190, 0.16);
+  --pp-border-strong: rgba(140, 165, 220, 0.28);
+
+  --pp-text: #eef2fb;
+  --pp-text-dim: #aab3cc;
+  --pp-text-faint: #6f7a97;
+
+  --pp-radius: 16px;
+  --pp-radius-sm: 10px;
+  --pp-shadow: 0 18px 50px -20px rgba(0, 0, 0, 0.75);
+  --pp-glow: 0 0 40px -8px rgba(255, 138, 60, 0.35);
+
+  --pp-maxw: 1120px;
+  --pp-read: 720px;
+
+  --pp-font-display: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --pp-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  color-scheme: dark;
+}
+
+/* Light theme override (toggle adds .pp-light to <html>) */
+html.pp-light {
+  --pp-bg: #f6f7fb;
+  --pp-bg-2: #eef1f8;
+  --pp-surface: rgba(255, 255, 255, 0.82);
+  --pp-surface-solid: #ffffff;
+  --pp-surface-hover: #ffffff;
+  --pp-border: rgba(30, 45, 90, 0.12);
+  --pp-border-strong: rgba(30, 45, 90, 0.2);
+  --pp-text: #141a2c;
+  --pp-text-dim: #4a5573;
+  --pp-text-faint: #7b859e;
+  --pp-shadow: 0 18px 50px -24px rgba(30, 45, 90, 0.3);
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background: var(--pp-bg);
+  color: var(--pp-text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  line-height: 1.6;
+}
+
+/* Ambient flame glow anchored top-center */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 45% at 50% -8%, rgba(255, 138, 60, 0.16), transparent 70%),
+    radial-gradient(45% 40% at 82% 4%, rgba(90, 209, 255, 0.1), transparent 70%),
+    radial-gradient(55% 50% at 12% 100%, rgba(244, 63, 94, 0.1), transparent 70%),
+    var(--pp-bg);
+}
+
+a {
+  color: var(--pp-cyan-soft);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+a:hover {
+  color: var(--pp-amber);
+}
+
+h1,
+h2,
+h3,
+h4,
+.brand-name {
+  font-family: var(--pp-font-display);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+[role='button']:focus-visible {
+  outline: 2px solid var(--pp-orange);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Ember-tinted scrollbars (WebKit + Firefox) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 138, 60, 0.35) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 138, 60, 0.28);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 138, 60, 0.5);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::selection {
+  background: rgba(255, 138, 60, 0.35);
+  color: #fff;
+}
+
+/* Layout helpers */
+.pp-container {
+  width: 100%;
+  max-width: var(--pp-maxw);
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+
+.pp-page {
+  min-height: calc(100vh - 64px);
+  padding: 2rem 0 5rem;
+}
+
+.gradient-text {
+  background: var(--pp-flame-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Reusable glassy card */
+.glass {
+  background: var(--pp-surface);
+  border: 1px solid var(--pp-border);
+  border-radius: var(--pp-radius);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* Chips */
+.pp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid var(--pp-border-strong);
+  color: var(--pp-text-dim);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.15s ease;
+  white-space: nowrap;
+}
+.pp-chip:hover {
+  color: var(--pp-text);
+  border-color: var(--pp-orange);
+  transform: translateY(-1px);
+}
+.pp-chip.active {
+  color: #1a1204;
+  background: var(--pp-flame-gradient);
+  border-color: transparent;
+  box-shadow: var(--pp-glow);
+}
+
+/* Rendered article typography */
+.prose {
+  font-size: 1.075rem;
+  line-height: 1.75;
+  color: var(--pp-text);
+  word-wrap: break-word;
+}
+.prose > *:first-child {
+  margin-top: 0;
+}
+.prose h1,
+.prose h2,
+.prose h3 {
+  margin: 2rem 0 0.75rem;
+}
+.prose h2 {
+  font-size: 1.6rem;
+}
+.prose h3 {
+  font-size: 1.28rem;
+}
+.prose p {
+  margin: 0 0 1.15rem;
+}
+.prose a {
+  border-bottom: 1px solid rgba(90, 209, 255, 0.35);
+}
+.prose ul,
+.prose ol {
+  margin: 0 0 1.15rem;
+  padding-left: 1.4rem;
+}
+.prose li {
+  margin: 0.35rem 0;
+}
+.prose blockquote {
+  margin: 1.4rem 0;
+  padding: 0.4rem 1.2rem;
+  border-left: 3px solid var(--pp-orange);
+  background: rgba(255, 138, 60, 0.06);
+  border-radius: 0 var(--pp-radius-sm) var(--pp-radius-sm) 0;
+  color: var(--pp-text-dim);
+}
+.prose code {
+  font-family: var(--pp-font-mono);
+  font-size: 0.88em;
+  background: rgba(120, 140, 190, 0.16);
+  padding: 0.12em 0.42em;
+  border-radius: 6px;
+}
+.prose pre {
+  position: relative;
+  background: #0a0d18;
+  border: 1px solid var(--pp-border);
+  border-radius: var(--pp-radius-sm);
+  padding: 1rem 1.2rem;
+  overflow-x: auto;
+  margin: 0 0 1.3rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+html.pp-light .prose pre {
+  background: #10141f;
+  color: #e6ebf5;
+}
+.prose pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.86rem;
+  line-height: 1.6;
+  color: #dbe4f5;
+}
+/* Language badge on fenced code blocks (backend emits class="language-…") */
+.prose pre:has(code[class*='language-'])::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 0.2rem 0.65rem;
+  font-family: var(--pp-font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pp-text-faint);
+  background: rgba(120, 140, 190, 0.1);
+  border-left: 1px solid var(--pp-border);
+  border-bottom: 1px solid var(--pp-border);
+  border-radius: 0 var(--pp-radius-sm) 0 8px;
+}
+.prose pre:has(code.language-python)::before {
+  content: 'python';
+  color: var(--pp-amber);
+}
+.prose pre:has(code.language-bash)::before,
+.prose pre:has(code.language-sh)::before,
+.prose pre:has(code.language-shell)::before {
+  content: 'shell';
+  color: var(--pp-cyan);
+}
+.prose pre:has(code.language-js)::before,
+.prose pre:has(code.language-javascript)::before {
+  content: 'js';
+  color: var(--pp-amber);
+}
+.prose pre:has(code.language-ts)::before,
+.prose pre:has(code.language-typescript)::before {
+  content: 'ts';
+  color: var(--pp-cyan);
+}
+.prose pre:has(code.language-json)::before {
+  content: 'json';
+}
+.prose pre:has(code.language-html)::before {
+  content: 'html';
+}
+.prose pre:has(code.language-css)::before {
+  content: 'css';
+}
+.prose pre:has(code.language-rust)::before {
+  content: 'rust';
+  color: var(--pp-ember);
+}
+.prose img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--pp-radius-sm);
+}
+.prose hr {
+  border: none;
+  border-top: 1px solid var(--pp-border);
+  margin: 2.4rem 0;
+}
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 1.3rem;
+  font-size: 0.95rem;
+}
+.prose th,
+.prose td {
+  border: 1px solid var(--pp-border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+.prose th {
+  background: rgba(120, 140, 190, 0.1);
+}
+
+/* Route transition */
+.fade-enter-active,
+.fade-leave-active {
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease;
+}
+.fade-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* Skeleton shimmer */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(120, 140, 190, 0.1);
+  border-radius: var(--pp-radius-sm);
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.06),
+    transparent
+  );
+  animation: pp-shimmer 1.4s infinite;
+}
+@keyframes pp-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* PrimeVue tweaks to sit on the flame theme */
+.p-button.pp-flame {
+  background: var(--pp-flame-gradient);
+  border: none;
+  color: #17110a;
+  font-weight: 700;
+  box-shadow: var(--pp-glow);
+}
+.p-button.pp-flame:hover {
+  filter: brightness(1.06);
+}
+
+@media (max-width: 640px) {
+  .pp-page {
+    padding: 1.25rem 0 4rem;
+  }
+  .prose {
+    font-size: 1.02rem;
+  }
+}

@@ -1,0 +1,5 @@
+.venv/
+.dfx/
+.kybra/
+__pycache__/
+*.pyc

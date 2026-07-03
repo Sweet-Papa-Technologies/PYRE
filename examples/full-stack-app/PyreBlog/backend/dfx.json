@@ -1,0 +1,8 @@
+{
+    "canisters": {
+        "pyrepress": {
+            "type": "kybra",
+            "main": "src/main.py"
+        }
+    }
+}
