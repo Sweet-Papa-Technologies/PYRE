@@ -743,3 +743,50 @@ not just header stripping — the body is a determinism surface too.
 pyre.static + pyre.oidc are unreleased; the full-stack canister must build
 against local pyre + scripts/build_native.sh (native _pyre_native for
 RSA/EC). So PyrePress forces the 1.2.0 release (static + oidc + log fix).
+
+## PyrePress mainnet ship — Option A (certified blog + hosted SPA) (2026-07-03)
+
+LIVE: **56lox-7iaaa-aaaai-axzya-cai** → https://56lox-7iaaa-aaaai-axzya-cai.icp0.io/
+Deployed from local pyre (static+oidc unreleased); plain deploy, no native
+(_pyre_native) — Phase A + SPA need no crypto; oidc lazy-imports it.
+Cost: ~3.5T cycles (create+install+SPA upload); 4.96T ledger remains.
+
+Proven on mainnet (real icp0.io certifying gateway):
+- **Certified SPA index** GET / → 200 + IC-Certificate, and the OFFICIAL
+  @dfinity/response-verification verifier PASSES it (v2, BLS to NNS root
+  key). The tamper-proof ENTRY POINT of a canister-hosted SPA is
+  cryptographically verifiable — not just the API.
+- **Certified post** GET /api/posts/{slug} → 200 + IC-Certificate, official
+  verifier PASS. The self-verifying announcement post is live.
+- SPA assets (23 files, 838KB) served from stable memory with correct
+  content-types; browser deep-link (/post/<slug> with Accept: text/html)
+  falls back to index.html (200). Note: curl w/ Accept: */* gets 404 JSON
+  — the SPA fallback correctly keys on Accept: text/html.
+- Author token rotated dev→strong at runtime (old token → 401); 4 posts
+  seeded; RSS base_url set.
+- update-workaround routes (/api/posts/query) and certified routes
+  (/api/posts, /api/feed.xml) all 200.
+
+### F16 REFINED (mainnet evidence overturns the "all uncertified GETs break" claim)
+Clean isolated test on mainnet: rest_api /echo (uncertified GET) returns
+**200** on icp0.io even though /health is CERTIFIED on the same canister.
+So a certified route coexisting with a DISJOINT uncertified route does NOT
+break the uncertified one. The backend agents' 503s were for uncertified
+routes SHARING A PATH SUBTREE with a certified route (/api/posts/query
+sits under certified /api/posts + /api/posts/{slug}) — that's where the
+skip-cert wildcard witness needs an absence proof it doesn't provide.
+Refined rule: uncertified fast queries are fine on the gateway UNLESS they
+share a path prefix/subtree with a certified route; then use update=True
+(proven sufficient — all PyrePress update routes 200 on mainnet) or
+certify them. Pinning the exact shared-subtree trigger to a one-canister
+controlled A/B is a cheap follow-up; the workaround is confirmed working.
+For pyre.static specifically, mount(update=True) is the shipped answer
+(the catch-all shares the root subtree with the certified index).
+
+### Still Option B (user-gated): real Google sign-in + comment loop
+Needs: user's Google OAuth client id + authorized JS origin
+(https://56lox-7iaaa-aaaai-axzya-cai.icp0.io), then set it
+(PUT /api/meta {google_client_id} + VITE_GOOGLE_CLIENT_ID rebuild), a
+native rebuild (build_native.sh adapted to backend/dfx.json) so real
+verify() runs, and a browser login. Comment INFRASTRUCTURE is deployed;
+dev-login provider is OFF (auth:dev_login unset).
