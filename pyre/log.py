@@ -76,9 +76,18 @@ def _emit(level, message, fields):
 
 
 def _print(line):
-    try:
-        from kybra import ic  # lazy: canister runtime only
-        ic.print(line)
-    except ImportError:
-        import sys
-        print(line, file=sys.stderr)
+    # In a canister, route to ic.print (ic0.debug_print). On the host —
+    # including `pyre dev` in a venv that HAS kybra installed, where the
+    # import succeeds but ic.print() has no IC runtime and raises — fall
+    # back to stderr. Catch broadly: logging must never take down a handler.
+    from pyre._runtime import in_canister
+
+    if in_canister():
+        try:
+            from kybra import ic
+            ic.print(line)
+            return
+        except Exception:
+            pass
+    import sys
+    print(line, file=sys.stderr)
