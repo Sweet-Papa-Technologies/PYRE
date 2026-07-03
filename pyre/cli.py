@@ -196,11 +196,16 @@ def cmd_dev(args):
     return 1
 
 
-def _http_json(method, url, token=None, payload=None, timeout=60):
+def _http_json(method, url, token=None, payload=None, timeout=60, connect=None):
     """One JSON-over-HTTP exchange. Returns (status, parsed_body_or_None).
 
     Raises on transport errors (connection refused, DNS, timeout); HTTP
-    error statuses are returned, not raised."""
+    error statuses are returned, not raised.
+
+    connect="host:port" dials that address instead of resolving the URL's
+    host, while preserving the original Host header so the boundary node
+    still routes by canister subdomain. Needed because macOS' resolver
+    doesn't answer `<canister-id>.localhost`."""
     import json as _json
     import urllib.error
     import urllib.request
@@ -212,7 +217,19 @@ def _http_json(method, url, token=None, payload=None, timeout=60):
     if payload is not None:
         data = _json.dumps(payload).encode("utf-8")
         headers["content-type"] = "application/json"
-    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    request_url = url
+    original_host = None
+    if connect:
+        from urllib.parse import urlsplit, urlunsplit
+
+        parts = urlsplit(url)
+        original_host = parts.netloc
+        request_url = urlunsplit(
+            (parts.scheme, connect, parts.path, parts.query, parts.fragment)
+        )
+    request = urllib.request.Request(request_url, data=data, headers=headers, method=method)
+    if original_host:
+        request.add_unredirected_header("Host", original_host)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as resp:
             body, status = resp.read(), resp.status
@@ -225,7 +242,7 @@ def _http_json(method, url, token=None, payload=None, timeout=60):
     return status, parsed
 
 
-def _push_call(method, url, token, payload, tries=3):
+def _push_call(method, url, token, payload, tries=3, connect=None):
     """_http_json with retries (transport errors and 5xx; backoff 1s/2s)."""
     import time as _time
 
@@ -233,7 +250,7 @@ def _push_call(method, url, token, payload, tries=3):
     last_error = None
     for attempt in range(tries):
         try:
-            status, parsed = _http_json(method, url, token, payload)
+            status, parsed = _http_json(method, url, token, payload, connect=connect)
         except Exception as e:  # noqa: BLE001 — URLError, socket, timeout
             last_error = e
         else:
@@ -298,7 +315,7 @@ def cmd_assets_push(args):
         return 1
 
     # 2. skip files the canister already has (same raw sha256, same gzip-ness)
-    status, listing = _push_call("GET", admin + "/list", args.token, None)
+    status, listing = _push_call("GET", admin + "/list", args.token, None, connect=args.connect)
     if status == 401:
         print("error: token rejected (401) by %s" % admin, file=sys.stderr)
         return 1
@@ -330,7 +347,7 @@ def cmd_assets_push(args):
             entry["gzip_size"] = len(gz)
             entry["gzip_sha256"] = hashlib.sha256(gz).hexdigest()
         manifest[rel] = entry
-    status, out = _push_call("POST", admin + "/manifest", args.token, {"assets": manifest})
+    status, out = _push_call("POST", admin + "/manifest", args.token, {"assets": manifest}, connect=args.connect)
     accepted = (out or {}).get("accepted") or {}
     rejected = (out or {}).get("rejected") or {}
     for rel in sorted(rejected):
@@ -357,7 +374,7 @@ def cmd_assets_push(args):
                     "index": index,
                     "data": base64.b64encode(piece).decode("ascii"),
                 }
-                status, out = _push_call("POST", admin + "/chunk", args.token, payload)
+                status, out = _push_call("POST", admin + "/chunk", args.token, payload, connect=args.connect)
                 if status != 200:
                     print(
                         "error: chunk %s [%s %d] rejected (HTTP %d): %s"
@@ -370,7 +387,7 @@ def cmd_assets_push(args):
 
     # 5. finalize (verifies sha256s server-side, then swaps atomically)
     paths = [rel for rel, _, _ in to_send if rel in accepted]
-    status, out = _push_call("POST", admin + "/finalize", args.token, {"paths": paths})
+    status, out = _push_call("POST", admin + "/finalize", args.token, {"paths": paths}, connect=args.connect)
     errors = (out or {}).get("errors") or {}
     if status != 200 or errors:
         for rel in sorted(errors):
@@ -423,6 +440,14 @@ def main(argv=None):
         help="where static.admin_routes() is mounted (default: /_pyre/static)",
     )
     p_push.add_argument("--no-gzip", action="store_true", help="skip gzip variants")
+    p_push.add_argument(
+        "--connect",
+        default=None,
+        metavar="HOST:PORT",
+        help="dial this address instead of resolving the URL host, keeping the "
+        "original Host header (needed for <canister-id>.localhost on macOS, "
+        "e.g. --connect 127.0.0.1:4943)",
+    )
     p_push.set_defaults(func=cmd_assets_push)
 
     args = parser.parse_args(argv)

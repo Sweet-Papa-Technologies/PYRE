@@ -399,7 +399,8 @@ def _not_found(request):
     return Response.json({"error": "not found", "path": request.path}, status=404)
 
 
-def mount(app, prefix="/", index="index.html", spa=True, certified_index=False):
+def mount(app, prefix="/", index="index.html", spa=True, certified_index=False,
+          update=False):
     """Serve the asset store from `app` under `prefix`.
 
     Register API routes on the same app freely — the catch-all matches at
@@ -410,7 +411,21 @@ def mount(app, prefix="/", index="index.html", spa=True, certified_index=False):
     certification tree (re-certified automatically after every update, so
     finalize immediately refreshes it). The certified index always serves
     the RAW variant — a certified snapshot cannot vary per Accept-Encoding.
-    Asset responses stay uncertified queries riding skip-certification.
+
+    update=True serves ASSET responses (and a non-certified index) through
+    the update path instead of as skip-certification queries. This is
+    REQUIRED to serve a canister-hosted SPA through the certifying gateway
+    (icp0.io / <id>.ic0.app): once any route on the canister is certified,
+    the gateway rejects the skip-certification wildcard witness that plain
+    asset queries carry (it wants an absence proof for the asset path), so
+    uncertified asset queries 503. Routing them through update makes them
+    consensus-certified and gateway-accepted.
+    Tradeoff: update responses cost a consensus round (~2s on mainnet) per
+    asset, versus a fast query. For a low-traffic SPA (a blog, a docs site)
+    this is fine; for asset-heavy or high-traffic sites, certifying every
+    asset (fast + verified) is the better answer — a documented v1.2.x
+    enhancement. On a canister with NO certified routes, leave update=False
+    (the whole-canister skip wildcard is accepted and queries stay fast).
     """
     if not prefix.startswith("/"):
         raise ValueError("static prefix must start with '/': %r" % (prefix,))
@@ -462,10 +477,13 @@ def mount(app, prefix="/", index="index.html", spa=True, certified_index=False):
         return Response(read_asset(rel, "gzip" if use_gzip else "raw"), headers=headers)
 
     if app.router.match("GET", root_path)[0] is None:
+        # A certified index is served from its snapshot (fast query); an
+        # uncertified index follows the asset `update` policy.
         app.router.add(
-            "GET", root_path, pyre_static_index, update=False, certified=certified_index
+            "GET", root_path, pyre_static_index,
+            update=update and not certified_index, certified=certified_index,
         )
-    app.router.add("GET", base + "/{path:path}", pyre_static_asset, update=False)
+    app.router.add("GET", base + "/{path:path}", pyre_static_asset, update=update)
     return {"root": root_path, "catch_all": base + "/{path:path}", "index": index_rel}
 
 

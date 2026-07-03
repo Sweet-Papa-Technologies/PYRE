@@ -574,7 +574,7 @@ def test_uncertified_mount_has_no_certified_routes():
 
 
 def make_fake_http(app):
-    def fake_http(method, url, token=None, payload=None, timeout=60):
+    def fake_http(method, url, token=None, payload=None, timeout=60, connect=None):
         path = url.split("http://fake", 1)[1]
         headers = {"authorization": "Bearer " + token} if token else {}
         body = json.dumps(payload).encode() if payload is not None else b""
@@ -608,7 +608,7 @@ def push_args(dist, **overrides):
 
     defaults = dict(
         dist=str(dist), url="http://fake", token=TOKEN,
-        admin_prefix="/_pyre/static", no_gzip=False,
+        admin_prefix="/_pyre/static", no_gzip=False, connect=None,
     )
     defaults.update(overrides)
     return types.SimpleNamespace(**defaults)
@@ -645,3 +645,35 @@ def test_cli_assets_push_bad_token(monkeypatch, tmp_path):
     app = spa_app()
     monkeypatch.setattr(cli, "_http_json", make_fake_http(app))
     assert cli.cmd_assets_push(push_args(make_dist(tmp_path), token="nope")) == 1
+
+
+def test_mount_update_flag_routes_assets_through_update():
+    # update=True marks the catch-all (and uncertified index) as update
+    # routes so a canister-hosted SPA works behind the certifying gateway.
+    from pyre.application import App
+    from pyre import static as st
+
+    app = App()
+    st.mount(app, update=True)
+    asset = app.router.match("GET", "/assets/app-abc1234.js")[0]
+    index = app.router.match("GET", "/")[0]
+    assert asset.update is True
+    assert index.update is True
+
+    plain = App()
+    st.mount(plain, update=False)
+    assert plain.router.match("GET", "/assets/app-abc1234.js")[0].update is False
+
+
+def test_mount_certified_index_stays_query_even_with_update():
+    from pyre.application import App
+    from pyre import static as st
+
+    app = App()
+    st.mount(app, update=True, certified_index=True)
+    # a certified index serves from its snapshot (fast query), not update
+    index = app.router.match("GET", "/")[0]
+    assert index.update is False
+    assert index.certified is True
+    # assets still ride update
+    assert app.router.match("GET", "/assets/x-12345678.js")[0].update is True
