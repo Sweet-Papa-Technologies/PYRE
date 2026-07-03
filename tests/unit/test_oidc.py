@@ -487,6 +487,86 @@ def test_real_google_jwks_unknown_kid_still_key_not_found():
 
 
 # ---------------------------------------------------------------------------
+# JWKS outcall determinism — transform_jwks_response
+#
+# MEASURED (2026-07-03): Google's oauth2/v3/certs serves the SAME key set
+# with per-backend JSON field ordering — 12 consecutive fetches returned
+# byte-distinct bodies of identical logical content. Each replica fetches
+# independently, so without body canonicalization the outcall would
+# intermittently fail consensus on a 13-node subnet (while a 1-node local
+# replica looks fine). These tests pin the canonicalization contract.
+# ---------------------------------------------------------------------------
+
+def http_response(body, headers=(("content-type", "application/json"),
+                                 ("date", "Fri, 03 Jul 2026 09:00:00 GMT"))):
+    return {
+        "status": 200,
+        "headers": [{"name": n, "value": v} for n, v in headers],
+        "body": body if isinstance(body, bytes) else body.encode("utf-8"),
+    }
+
+
+def test_jwks_transform_makes_field_order_variants_identical():
+    # Two serializations of one logical key set, as Google actually serves
+    # them: same keys, different field order / whitespace.
+    key_a = {"kty": "RSA", "use": "sig", "alg": "RS256", "kid": "k1",
+             "n": "AQAB" * 8, "e": "AQAB"}
+    key_b = {"kid": "k2", "e": "AQAB", "n": "BQAB" * 8,
+             "alg": "RS256", "use": "sig", "kty": "RSA"}
+    variant_1 = json.dumps({"keys": [key_a, key_b]}, indent=2)
+    variant_2 = json.dumps(
+        {"keys": [dict(reversed(list(key_b.items()))),
+                  dict(reversed(list(key_a.items())))]})
+    out_1 = oidc.transform_jwks_response(http_response(variant_1))
+    out_2 = oidc.transform_jwks_response(http_response(variant_2))
+    assert out_1["body"] == out_2["body"]
+    # and the canonical form still parses to the same logical key set
+    doc = json.loads(out_1["body"].decode("utf-8"))
+    assert [k["kid"] for k in doc["keys"]] == ["k1", "k2"]  # sorted by kid
+
+
+def test_jwks_transform_strips_volatile_headers():
+    out = oidc.transform_jwks_response(http_response('{"keys": []}'))
+    names = [h["name"] for h in out["headers"]]
+    assert "date" not in names
+    assert names == sorted(names)
+
+
+def test_jwks_transform_passes_non_json_through():
+    body = b"<html>502 Bad Gateway</html>"
+    out = oidc.transform_jwks_response(http_response(body))
+    assert out["body"] == body  # fail loudly via consensus, not silently
+
+
+def test_verifier_fetch_uses_the_jwks_transform():
+    seen = []
+
+    def resolve(fut):
+        seen.append(fut.transform_name)
+        return jwks_response(fut, {"keys": [rsa_jwk()]})
+
+    drive(make_verifier().verify(mint(base_claims())), resolve)
+    assert seen == [oidc.JWKS_TRANSFORM]
+
+
+def test_transformed_google_body_verifies_end_to_end():
+    """Feed the verifier a body exactly as the canister sees it POST-transform
+    (canonicalized real-shape JWKS) — the parse/verify path must accept it."""
+    jwks_body = json.dumps({"keys": [rsa_jwk(), ec_jwk()]}, indent=2)
+    canonical = oidc.transform_jwks_response(http_response(jwks_body))["body"]
+
+    def resolve(fut):
+        return fut._wrap_response({
+            "status": 200,
+            "headers": [{"name": "content-type", "value": "application/json"}],
+            "body": canonical,
+        })
+
+    claims = drive(make_verifier().verify(mint(base_claims())), resolve)
+    assert claims["sub"]
+
+
+# ---------------------------------------------------------------------------
 # decode_jwt (exposed helper)
 # ---------------------------------------------------------------------------
 

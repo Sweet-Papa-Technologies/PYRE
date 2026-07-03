@@ -37,6 +37,14 @@ def pyre_default_transform(args: HttpTransformArgs) -> HttpResponse:
     return transform_management_response(args["response"])
 
 
+@query
+def pyre_oidc_jwks_transform(args: HttpTransformArgs) -> HttpResponse:
+    """JWKS-normalizing transform (oidc.JWKS_TRANSFORM): Google serves the
+    same key set with per-backend JSON field ordering, so replicas must
+    canonicalize the body or mainnet consensus intermittently fails."""
+    return oidc.transform_jwks_response(args["response"])
+
+
 RS_N = bytes.fromhex("91d93f59f60992deb1253410966e893ec363444c46cf54f72528496c89a6a1320d286b5b1142503b85174eab526cd578dfffc0a2f30434331703c2404d2370a13ccd021154df9756b55d6317af6ba2ed020133ce3c0daacbadfa271f08f9478a1d4173fbc0c64f0bfea7602ed60befaece38f49f0b26bd4b3e4f3a84b89a09393f2aa3237c9090d33bcff5e85efca2eb16c6cfeba149f336394d0c519d610f5d3cfbd183db0f3044d24ad403f35c853f5a48afcde707156689dcba8a9a22f5d8e9fc465aec9733057758e4ea77b21ff4ba081599d37b76b1da80f0fcb7bf7c9d736cb700eebafa3842b0b0ff97241c19ec3a37873dfe117594017aeb1eba8407")
 RS_E = bytes.fromhex("010001")
 RS_MSG = b"eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJweXJlLW9pZGMta2F0In0"
@@ -132,7 +140,8 @@ def jwks_fetch() -> str:
 def _jwks_fetch_gen():
     from pyre.compat import urllib_request as urllib
     resp = yield urllib.urlopen(
-        "https://www.googleapis.com/oauth2/v3/certs", max_response_bytes=8192)
+        "https://www.googleapis.com/oauth2/v3/certs", max_response_bytes=8192,
+        transform=oidc.JWKS_TRANSFORM)
     data = resp.json()
     keys = data.get("keys", [])
     kids = ",".join(k.get("kid", "?")[:8] for k in keys)
@@ -244,7 +253,10 @@ def _jwks_hash_gen():
     import hashlib
     from pyre.compat import urllib_request as urllib
     resp = yield urllib.urlopen(
-        "https://www.googleapis.com/oauth2/v3/certs", max_response_bytes=16384)
+        "https://www.googleapis.com/oauth2/v3/certs",
+        max_response_bytes=16384,
+        transform=oidc.JWKS_TRANSFORM,  # canonicalized: replicas must agree
+    )
     body = resp.read()
     return ("status=" + str(resp.status) + ";bytes=" + str(len(body))
             + ";sha256=" + hashlib.sha256(body).hexdigest())

@@ -47,6 +47,11 @@ DEFAULT_LEEWAY = 60
 # JWKS documents are a few KB; cap the outcall response accordingly.
 JWKS_MAX_RESPONSE_BYTES = 16_384
 
+# Candid name of the JWKS-normalizing transform the canister must register
+# (see transform_jwks_response below — the default header-only transform is
+# NOT sufficient for JWKS endpoints).
+JWKS_TRANSFORM = "pyre_oidc_jwks_transform"
+
 
 class OidcError(PyreError):
     """Base class for every OIDC verification failure."""
@@ -183,6 +188,56 @@ def generic(issuer, jwks_uri, client_id, name=None):
 
 
 # ---------------------------------------------------------------------------
+# JWKS outcall determinism — the transform
+# ---------------------------------------------------------------------------
+
+def transform_jwks_response(response):
+    """Canonicalize a JWKS HttpResponse so every replica agrees byte-for-byte.
+
+    MEASURED FINDING (2026-07-03, the reason this exists): Google serves
+    https://www.googleapis.com/oauth2/v3/certs from multiple backends that
+    serialize the SAME key set with DIFFERENT JSON field ordering — 12
+    consecutive fetches returned two byte-distinct bodies of identical
+    logical content. On a 13-replica subnet each replica fetches
+    independently, so the default header-only transform would let the
+    replicas disagree and the outcall would intermittently fail consensus
+    ON MAINNET while looking fine on a 1-node local replica.
+
+    Normalization: strip volatile headers (same allowlist as the default
+    transform), then parse the JSON body, sort the "keys" list by kid, and
+    re-serialize with sorted object keys and canonical separators. A
+    non-JSON body is passed through untouched (replicas will then disagree
+    and the call fails loudly rather than silently).
+
+    Canisters using pyre.oidc must register this under the name
+    oidc.JWKS_TRANSFORM:
+
+        from kybra import query
+        from kybra.canisters.management import HttpResponse, HttpTransformArgs
+        from pyre import oidc
+
+        @query
+        def pyre_oidc_jwks_transform(args: HttpTransformArgs) -> HttpResponse:
+            return oidc.transform_jwks_response(args["response"])
+    """
+    from pyre.transform import transform_management_response
+
+    resp = transform_management_response(response)
+    try:
+        doc = _json.loads(bytes(resp["body"]).decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return resp  # not JSON: nothing safe to normalize
+    if isinstance(doc, dict) and isinstance(doc.get("keys"), list):
+        doc["keys"] = sorted(
+            (k for k in doc["keys"] if isinstance(k, dict)),
+            key=lambda k: str(k.get("kid", "")),
+        )
+    resp["body"] = _json.dumps(
+        doc, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return resp
+
+
+# ---------------------------------------------------------------------------
 # JWKS cache (pyre.data) — the piece that collapses the 13× outcall tax
 # ---------------------------------------------------------------------------
 
@@ -307,9 +362,15 @@ class OidcVerifier:
     generator handlers (it may perform a JWKS outcall on a `kid` miss).
     """
 
-    def __init__(self, provider, leeway=DEFAULT_LEEWAY):
+    def __init__(self, provider, leeway=DEFAULT_LEEWAY, jwks_transform=JWKS_TRANSFORM):
+        """jwks_transform: Candid name of the transform query the canister
+        registers for JWKS fetches. Defaults to oidc.JWKS_TRANSFORM (the
+        normalizing transform — see transform_jwks_response; JWKS bodies
+        are NOT byte-stable across Google's backends, so the header-only
+        default transform is unsafe on a multi-replica subnet)."""
         self.provider = provider
         self.leeway = int(leeway)
+        self.jwks_transform = jwks_transform
         self._cache = _JwksCache()
 
     # -- public API ---------------------------------------------------------
@@ -372,6 +433,7 @@ class OidcVerifier:
             resp = yield _urllib.urlopen(
                 self.provider.jwks_uri,
                 max_response_bytes=JWKS_MAX_RESPONSE_BYTES,
+                transform=self.jwks_transform,
             )
         except PyreError as exc:
             raise JwksFetchError(
