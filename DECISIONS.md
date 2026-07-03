@@ -661,3 +661,85 @@ header — with dev-server and on-chain behavior byte-identical. Verdict:
 added), 4 nits (template __pycache__ [fixed 1.1.1], placeholder repo link
 in template READMEs [fixed], missing validate import line in api.md
 [fixed], undocumented no-auto-reload in pyre dev [documented]).
+
+---
+
+# PyrePress full-stack dogfood + v1.1→v1.2 framework work (2026-07-03)
+
+Building PyrePress (certified blog + authenticated comments, Vue SPA served
+from the canister) per examples/full-stack-app/PyreBlog/SPEC.PyreBlog.md —
+a deliberate LIMITS PROBE. Drove PYRE against nearly every hard corner at
+once and surfaced real findings. New framework capability landed:
+pyre.static, pyre.oidc, plus fixes. (Built with parallel agents; several
+collided on shared files and converged — noted where it mattered.)
+
+## pyre.static — serve a certified SPA from the canister (v1.0-optional item, now shipped)
+mount(app, prefix, index, spa, certified_index) + admin_routes(app,
+token_check) + `pyre assets push`. Assets chunked over kv (a JS bundle
+exceeds one 64KB stable entry): base64 chunks of 45,000 raw bytes,
+raw+gzip variants, max 1.8MB/variant. index.html is response-certified
+(the tamper-proof entry point); other assets serve as skip-certification
+queries with gzip negotiation + SPA fallback. New {name:path} catch-all
+segment in routing.py, matched at LOWER priority than all exact/param
+routes. Upload = HTTP manifest→chunk→finalize (works vs pyre dev AND
+replica/mainnet); finalize verifies sha256 and swaps atomically.
+
+## pyre.oidc — the Phase-B HARD GATE: **PASS** (the wall does not exist)
+The spec's highest risk was "the RSA-verify crate won't compile to the
+Kybra WASM target." IT COMPILES. rsa 0.9.6 + sha2 0.10.8 (RS256) and
+p256 0.13.2 (ES256) build clean to wasm32-wasip1 through the _pyre_native
+seam, first pin set. **+123,677 bytes raw / +22,214 gz (+0.44%)**; per
+verify ~21.1M (raw RS256) to ~30.5M instructions (full decode+JWKS+claims)
+— cheap, once per login. getrandom is in the graph (pre-existing via
+RustPython) but never called on the entropy-free verify path.
+Proven in-canister (oidc_spike, survives 4 upgrades): RS256+ES256 KATs
+with tamper negatives; full OidcVerifier path rejecting expired/wrong-aud/
+tampered/unknown-kid; a LIVE fetch of Google's real JWKS (200, 4 keys); a
+forged token with a real Google kid forced a refresh, parsed Google's real
+2048-bit key, rejected InvalidSignature; a host-minted key injected
+alongside the 4 real keys verified via the sync QUERY path with zero
+outcalls; JWKS cache survives upgrades. OidcVerifier + pluggable providers
+(google + generic); JWKS cached in pyre.data (zero-outcall steady state).
+**Implication (the finding FoFo wanted): the Kind-B boundary is "does the
+crate compile to target," and even heavyweight RSA does — the pullable-Rust
+surface is far wider than assumed.** Google OIDC is viable; the II fallback
+was NOT needed. Deferred to funded mainnet: one browser-minted real Google
+token (Google won't sign headlessly) + 13-replica JWKS-hash + cycle reading.
+
+### CRITICAL determinism finding: Google's JWKS body is not byte-stable
+12 host fetches returned byte-distinct serializations of the SAME key set
+(per-backend JSON field ordering). On 13 replicas with the default
+header-only transform this is intermittent consensus failure — INVISIBLE
+on a 1-node local replica, would only bite on mainnet. Fix: oidc.JWKS_
+TRANSFORM canonicalizes the JSON (keys sorted by kid, sorted object keys,
+compact separators); both observed upstream variants canonicalize to one
+sha256. This generalizes: ANY cached-outcall JSON needs canonicalization,
+not just header stripping — the body is a determinism surface too.
+
+## Framework fixes from the dogfood (DX friction, corroborated by 2 independent backend builds)
+- **F15 FIXED (pyre.log crashed the dev loop):** _print caught only
+  ImportError, but in a venv WITH kybra installed (the deploy venv running
+  `pyre dev`) the import succeeds while ic.print() has no runtime →
+  NameError escaped to a 500. Now gates on in_canister() and catches
+  broadly. Commit 6bc5bb7.
+- **F16 OPEN (needs mainnet confirm): uncertified 2xx GET may 503 behind
+  the certifying gateway once ANY route is certified** — the root skip-cert
+  wildcard witness carries no absence proof for the requested path. Local
+  e2e passes serving exactly this (rest_api /echo), so the local gateway
+  may be more lenient than mainnet icp0.io. ACTION at mainnet deploy:
+  reproduce on icp0.io; if confirmed, upgrade uncertified-2xx-GET to update
+  when certification is active. Workaround today: update=True on such routes.
+- Dynamic per-post certified route registration WORKS on-chain (Router.add
+  at publish, head-insert to beat {slug}, rebuilt at @init/@post_upgrade
+  from stable memory) but is undocumented and needs internal hacks (no
+  unroute(), manual snapshot eviction). Candidate: app.certify_path()/
+  uncertify_path() + a recipe.
+- markdown pkg is DOA under RustPython (importlib.metadata); shipped a
+  pure-stdlib subset renderer in the app. Candidate: bless a pyre.markdown.
+- auth.require_token(exempt=) is exact-path only — can't express "reads
+  public, writes gated". Candidate: method/prefix matching.
+
+## The integrated app needs pyre-icp 1.2.0
+pyre.static + pyre.oidc are unreleased; the full-stack canister must build
+against local pyre + scripts/build_native.sh (native _pyre_native for
+RSA/EC). So PyrePress forces the 1.2.0 release (static + oidc + log fix).
