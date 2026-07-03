@@ -18,6 +18,13 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
 ]
 
+[project.urls]
+Homepage = "https://github.com/Sweet-Papa-Technologies/PYRE"
+Documentation = "https://github.com/Sweet-Papa-Technologies/PYRE/tree/main/docs"
+Repository = "https://github.com/Sweet-Papa-Technologies/PYRE"
+Issues = "https://github.com/Sweet-Papa-Technologies/PYRE/issues"
+Changelog = "https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/DECISIONS.md"
+
 [project.scripts]
 pyre = "pyre.cli:main"
 
