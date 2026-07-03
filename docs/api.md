@@ -68,6 +68,8 @@ records migrate lazily on read and persist on next write.
 ## pyre.validate
 
 ```python
+from pyre import validate, ValidationError
+
 clean = validate(req.json(), {
     "id": str, "qty": int,          # required
     "note": (str, ""),              # optional with default

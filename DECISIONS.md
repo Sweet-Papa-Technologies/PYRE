@@ -643,3 +643,21 @@ attest, external verify), Phase 4 (this), Phase 5 (Basic auth, logging,
 extension docs, secrets limitation). Plus the post-review fake-entropy
 DEFUSAL. v1.1.0 tagged; PyPI release is one user-gated step away
 (trusted publisher + GitHub release).
+
+## Published + stranger test PASSED (2026-07-03)
+
+pyre-icp is live on PyPI (1.1.0 → 1.1.1 __pycache__ scaffold fix → 1.1.2
+stranger-test polish). GitHub release v1.1.1 cut; publish.yml now prefers
+trusted publishing with skip-existing (manual twine works meanwhile).
+
+**The stranger test — the v1.0/v1.1 acceptance bar — finally ran, and
+PASSED end-to-end**: a context-free agent role-playing a Flask dev who has
+never seen ICP went from the public README/PyPI pages through install,
+scaffold, dev server, a custom validated route written from docs/api.md
+alone (worked first try), local-replica deploy, and a live IC-Certificate
+header — with dev-server and on-chain behavior byte-identical. Verdict:
+"yes — could build a real app from docs alone." Friction: 2 stumbles
+(both dfx replica lifecycle, not PYRE — troubleshooting/quickstart rows
+added), 4 nits (template __pycache__ [fixed 1.1.1], placeholder repo link
+in template READMEs [fixed], missing validate import line in api.md
+[fixed], undocumented no-auto-reload in pyre dev [documented]).

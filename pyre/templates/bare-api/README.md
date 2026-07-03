@@ -1,6 +1,6 @@
 # __PROJECT_NAME__
 
-A [PYRE](https://github.com/) app for the Internet Computer.
+A [PYRE](https://github.com/Sweet-Papa-Technologies/PYRE) app for the Internet Computer.
 
 ## Iterate locally (no replica)
 

@@ -34,7 +34,8 @@ curl http://127.0.0.1:8000/items
 `pyre dev` is a plain local server running the same routing code the
 canister runs. Outbound calls do real HTTP and log what ICP's determinism
 transform would strip. Query/update rules are enforced locally so on-chain
-surprises surface now, not after deploy.
+surprises surface now, not after deploy. There is **no auto-reload**:
+after editing code, Ctrl-C and rerun (startup is instant).
 
 ## 3. Deploy to a local Internet Computer replica
 
@@ -43,6 +44,16 @@ dfx start --background
 dfx deploy           # first build compiles the runtime — go get coffee
 curl "http://$(dfx canister id myapp).localhost:4943/health"
 ```
+
+Two things you'll see and can ignore/fix:
+
+- dfx prints a *"dfx is deprecated, use icp-cli"* notice on every command.
+  These docs stay on dfx because Kybra's build extension targets it —
+  the notice is safe to ignore for now.
+- If the replica misbehaves (deploy hangs, `error sending request`,
+  "already running" confusion), the universal reset is:
+  `dfx killall && dfx start --clean --background` — note `--clean` wipes
+  local canister state.
 
 That `/health` response arrives with an `IC-Certificate` header — it is
 cryptographically certified, not just served (see concepts.md).
