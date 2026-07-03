@@ -141,7 +141,8 @@ def cmd_new(args):
         )
         return 1
     project = os.path.basename(dest)
-    shutil.copytree(source, dest)
+    # pip byte-compiles installed templates; don't ship the caches
+    shutil.copytree(source, dest, ignore=shutil.ignore_patterns("__pycache__"))
     # stamp the project name into dfx.json and README
     for rel in ("dfx.json", "README.md"):
         path = os.path.join(dest, rel)
