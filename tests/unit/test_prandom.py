@@ -43,7 +43,7 @@ def test_module_functions_are_deterministic_across_replicas(monkeypatch):
         return (
             [prandom.random() for _ in range(5)],
             [prandom.randint(0, 1000) for _ in range(5)],
-            prandom.token_hex(16),
+            prandom.weak_token_hex(16),
             [prandom.uuid4() for _ in range(5)],
             prandom.choice(["a", "b", "c", "d"]),
         )
@@ -103,11 +103,13 @@ def test_choice(seeded):
         prandom.choice([])
 
 
-def test_token_hex_length_and_charset(seeded):
-    token = prandom.token_hex(8)
+def test_weak_token_hex_length_and_charset(seeded):
+    token = prandom.weak_token_hex(8)
     assert len(token) == 16
     assert re.fullmatch(r"[0-9a-f]{16}", token)
-    assert len(prandom.token_hex()) == 32  # default n=16
+    assert len(prandom.weak_token_hex()) == 32  # default n=16
+    # correlation_id is an alias with the same contract
+    assert len(prandom.correlation_id(8)) == 16
 
 
 def test_uuid4_format_and_uniqueness_in_one_message(seeded):

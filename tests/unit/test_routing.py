@@ -80,19 +80,24 @@ def test_405_with_allow_header():
     assert body_json(response)["allowed"] == ["GET"]
 
 
-def test_handler_exception_becomes_500_with_message_no_traceback():
+def test_handler_exception_becomes_500_without_leaking_internals():
     assert make_app().handle_query(make_request(path="/boom")) is UPGRADE
     response = run_update(make_app(), make_request(path="/boom"))
     assert response.status == 500
     payload = body_json(response)
-    assert payload["message"] == "kaput"
+    assert payload["error"] == "internal server error"
+    # The raw exception string must NOT be reflected to clients in
+    # production — it can carry key names, paths and library internals.
+    assert "message" not in payload
+    assert "kaput" not in response.body.decode("utf-8")
     assert "traceback" not in payload
 
 
-def test_debug_mode_includes_traceback():
+def test_debug_mode_includes_message_and_traceback():
     app = make_app()
     app.debug = True
     payload = body_json(run_update(app, make_request(path="/boom")))
+    assert payload["message"] == "kaput"
     assert "traceback" in payload
 
 

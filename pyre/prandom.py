@@ -13,8 +13,9 @@ TIER 1 — sync, deterministic-per-message (queries AND updates):
     prandom.random()      # float in [0, 1)
     prandom.randint(1, 6) # unbiased inclusive range
     prandom.choice(seq)
-    prandom.token_hex(16) # 32 hex chars
-    prandom.uuid4()       # RFC-4122-shaped v4 UUID string
+    prandom.weak_token_hex(16)  # 32 hex chars — non-secret ids ONLY
+    prandom.correlation_id()    # readable alias for the same
+    prandom.uuid4()             # RFC-4122-shaped v4 UUID string
 
   These come from a sha256 counter DRBG seeded from (ic.time(), a
   monotonically increasing counter, the canister id). Every replica feeds
@@ -182,10 +183,23 @@ def choice(seq):
     return seq[randint(0, len(seq) - 1)]
 
 
-def token_hex(n=16):
-    """2*n hex chars from the DRBG. Fine for correlation ids and slugs;
-    NOT for auth tokens or API keys — use `await raw_bytes()` for those."""
+def weak_token_hex(n=16):
+    """2*n hex chars from the tier-1 DRBG. Fine for correlation ids, slugs,
+    and cache-busters — NOT for auth tokens, session ids, API keys, CSRF
+    tokens or password-reset codes.
+
+    Deliberately NOT named `token_hex`: the stdlib's `secrets.token_hex` is
+    CSPRNG-backed and safe for secrets, but this one is reproducible by
+    anyone who knows the (public) call ordering. For anything security-
+    bearing use `await raw_bytes(n)` / `await uuid4_strong()` (tier 2).
+    """
     return _drbg.take(n).hex()
+
+
+def correlation_id(n=16):
+    """Alias for weak_token_hex() — a readable name for its intended use:
+    non-secret request/trace correlation ids. Reproducible; not a secret."""
+    return weak_token_hex(n)
 
 
 def _format_uuid4(raw16):

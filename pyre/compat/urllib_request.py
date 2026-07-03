@@ -27,8 +27,10 @@ from pyre.errors import (  # noqa: F401 — re-exported for callers
 from pyre.outcall import (  # noqa: F401
     DEFAULT_CYCLES,
     DEFAULT_MAX_RESPONSE_BYTES,
+    OutcallBlocked,
     OutcallFuture,
     UrlResponse,
+    set_allowed_hosts,
 )
 
 # The Candid name of the transform query method the canister template

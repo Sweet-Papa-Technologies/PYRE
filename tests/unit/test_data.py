@@ -117,3 +117,36 @@ def test_lazy_migration_gains_field_without_data_loss():
 def test_version_bump_requires_migrate():
     with pytest.raises(ValueError):
         data.collection("x", version=2)
+
+
+def test_list_bounds_scan_and_returns_resume_cursor():
+    # A where-filter that matches nothing must not scan the whole (large)
+    # collection in one call: the scan is bounded to max_scan and hands back
+    # a cursor so the caller resumes, instead of doing unbounded per-message
+    # work (the DoS guard, see data.MAX_SCAN).
+    foods = make_foods()
+    for i in range(25):
+        foods.insert({"name": "n%02d" % i, "kcal": i})
+
+    page = foods.list(where={"name": "does-not-exist"}, max_scan=10)
+    assert page["items"] == []
+    assert page["next"] is not None  # budget hit before finishing → resume cursor
+
+    # Walking the cursor eventually drains the collection (next → None).
+    cursor, seen, guard = page["next"], 0, 0
+    while cursor is not None and guard < 100:
+        nxt = foods.list(where={"name": "does-not-exist"}, after=cursor, max_scan=10)
+        assert nxt["items"] == []
+        seen += 1
+        cursor = nxt["next"]
+        guard += 1
+    assert cursor is None  # fully scanned, no infinite loop
+
+
+def test_list_small_collection_completes_without_cursor():
+    foods = make_foods()
+    for i in range(3):
+        foods.insert({"name": "n%d" % i, "kcal": i})
+    page = foods.list()
+    assert len(page["items"]) == 3
+    assert page["next"] is None

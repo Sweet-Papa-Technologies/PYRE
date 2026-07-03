@@ -194,6 +194,19 @@ def content_type_for(path):
     return CONTENT_TYPES.get(_ext(path), DEFAULT_CONTENT_TYPE)
 
 
+def _clean_content_type(value, rel):
+    """Validate a client-supplied content-type before it is stored and later
+    echoed into a response header. Reject non-strings, control characters
+    (CR/LF header-injection defense), and absurd lengths — falling back to
+    the extension-derived type. Upload is admin-gated, so this is defense in
+    depth, not the only gate."""
+    if not isinstance(value, str) or not value:
+        return content_type_for(rel)
+    if len(value) > 255 or any(ord(c) < 0x20 or ord(c) == 0x7F for c in value):
+        return content_type_for(rel)
+    return value
+
+
 def is_compressible(path):
     return _ext(path) in COMPRESSIBLE_EXTS
 
@@ -637,7 +650,7 @@ def admin_routes(app, token_check, prefix=DEFAULT_ADMIN_PREFIX):
             stage = {
                 "size": size,
                 "sha256": sha.lower(),
-                "content_type": spec.get("content_type") or content_type_for(rel),
+                "content_type": _clean_content_type(spec.get("content_type"), rel),
                 "chunks": _chunk_count(size),
                 "gzip": has_gzip,
                 "gzip_chunks": _chunk_count(gz_size) if has_gzip else 0,

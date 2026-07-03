@@ -85,7 +85,13 @@ class App:
 
     # -- shared dispatch pieces --------------------------------------------------
 
-    def _error_payload(self, status, payload, request):
+    def _error_payload(self, status, payload, request, client_payload=None):
+        """Answer an error. `payload` is handed to any registered
+        errorhandler (the app's own code — it may surface whatever it wants).
+        `client_payload`, if given, is what the DEFAULT fallback serves when
+        no handler is registered or a handler raises — used to withhold
+        internal detail (exception strings) from clients while still giving
+        the app's handler the full context."""
         handler = self._error_handlers.get(status)
         if handler is not None:
             try:
@@ -95,7 +101,8 @@ class App:
                     return rv
             except Exception:  # noqa: BLE001 — a broken error handler falls through
                 pass
-        return Response.json(payload, status=status)
+        return Response.json(
+            payload if client_payload is None else client_payload, status=status)
 
     def _lookup(self, request):
         """Returns (route, error_response). Fills request.path_params."""
@@ -125,12 +132,22 @@ class App:
             return self._error_payload(
                 400, {"error": "bad request", "message": str(exc)}, request
             )
-        payload = {"error": "internal server error", "message": str(exc)}
+        # The app's own 500 handler gets the full context (message, and in
+        # debug the traceback). The DEFAULT client fallback does NOT reflect
+        # the raw exception string in production: str(exc) can carry key
+        # names, paths and library internals. The detail is available
+        # server-side via `dfx canister logs`; it only reaches the client
+        # response when debug is explicitly enabled.
+        info = {"error": "internal server error", "message": str(exc)}
+        client = {"error": "internal server error"}
         if self.debug:
             import traceback
 
-            payload["traceback"] = traceback.format_exc()
-        return self._error_payload(500, payload, request)
+            tb = traceback.format_exc()
+            info["traceback"] = tb
+            client["message"] = str(exc)
+            client["traceback"] = tb
+        return self._error_payload(500, info, request, client_payload=client)
 
     def _finish(self, rv, request):
         response = coerce_response(rv)

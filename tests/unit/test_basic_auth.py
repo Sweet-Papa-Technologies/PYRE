@@ -56,11 +56,35 @@ def test_valid_creds_dict_hashed():
 
 
 def test_valid_creds_dict_plaintext():
-    app = protected_app(users={"bob": "hunter2"})
+    # Plaintext-stored passwords are dev-only and now require an explicit
+    # opt-in (allow_plaintext=True) so the default hashed mode never treats
+    # the stored hash as a password-equivalent.
+    app = protected_app(users={"bob": "hunter2"}, allow_plaintext=True)
     response = app.handle_query(
         make_request(path="/private", headers=basic_header("bob", "hunter2"))
     )
     assert response.status == 200
+
+
+def test_stored_hash_is_not_a_valid_password():
+    # Regression: an operator who reads the stored sha256 hash out of
+    # canister state must NOT be able to replay it verbatim as the password.
+    digest = sha("s3cret")
+    app = protected_app(users={"alice": digest})
+    response = run_update(
+        app, make_request(path="/private", headers=basic_header("alice", digest))
+    )
+    assert response.status == 401
+
+
+def test_plaintext_rejected_without_optin():
+    # Without allow_plaintext, a stored plaintext password does not match
+    # (the presented password is hashed before comparison).
+    app = protected_app(users={"bob": "hunter2"})
+    response = run_update(
+        app, make_request(path="/private", headers=basic_header("bob", "hunter2"))
+    )
+    assert response.status == 401
 
 
 def test_valid_creds_callable():

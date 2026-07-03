@@ -31,6 +31,14 @@ from pyre.validation import validate
 
 _ID_WIDTH = 12  # zero-padded sequence ids keep kv's key order == insertion order
 
+# Upper bound on records a single list() call will decode before it stops
+# and hands back a cursor. A collection can grow without bound, and
+# list(where=...) decodes every candidate it scans; without a cap, a large
+# (or attacker-grown) collection drives one query past the per-message
+# instruction limit and traps the call — a denial of service. With the cap,
+# an unfilled page just returns a `next` cursor so the caller resumes.
+MAX_SCAN = 10_000
+
 
 class Collection:
     def __init__(self, name, schema=None, version=1, migrate=None):
@@ -129,25 +137,43 @@ class Collection:
     def count(self):
         return len(self.ids())
 
-    def list(self, limit=20, after=None, where=None):
+    def list(self, limit=20, after=None, where=None, max_scan=None):
         """Insertion-ordered page: {"items": [...], "next": cursor-or-None}.
 
         `after` is the cursor from the previous page's "next". `where` is a
         dict of exact-match field filters, applied while scanning (MVP: this
         is an O(collection) scan, fine for small app data).
+
+        The scan decodes at most `max_scan` records (default MAX_SCAN) per
+        call. If that budget is hit before the page fills — e.g. a `where`
+        filter that matches few records in a large collection — the call
+        returns the items found so far plus a `next` cursor at the last
+        record examined, so the caller resumes with `after=next` instead of
+        the framework doing unbounded work (and risking an instruction-limit
+        trap) in a single message. `next is None` still means "end reached".
         """
         limit = max(1, int(limit))
+        budget = MAX_SCAN if max_scan is None else max(1, int(max_scan))
         items = []
         next_cursor = None
+        scanned = 0
+        last_seen = None
         for record_id in self.ids():
             if after is not None and record_id <= after:
-                continue
-            doc = self.get(record_id)
-            if where and any(doc.get(k) != v for k, v in where.items()):
                 continue
             if len(items) == limit:
                 next_cursor = items[-1]["id"]
                 break
+            if scanned >= budget:
+                # Budget exhausted before the page filled: resume from the
+                # last record we examined rather than scanning further now.
+                next_cursor = last_seen
+                break
+            scanned += 1
+            last_seen = record_id
+            doc = self.get(record_id)
+            if where and any(doc.get(k) != v for k, v in where.items()):
+                continue
             items.append(doc)
         else:
             next_cursor = None
