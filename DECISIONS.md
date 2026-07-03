@@ -790,3 +790,26 @@ Needs: user's Google OAuth client id + authorized JS origin
 native rebuild (build_native.sh adapted to backend/dfx.json) so real
 verify() runs, and a browser login. Comment INFRASTRUCTURE is deployed;
 dev-login provider is OFF (auth:dev_login unset).
+
+## PyrePress Option B — real Google OIDC comments, LIVE on mainnet (2026-07-03)
+
+Native _pyre_native (RSA/EC) compiled INTO the app canister and upgraded on
+mainnet (build_native_mainnet.sh — adapts scripts/build_native.sh to the
+app's own dfx.json; the native-into-an-app-canister recipe, now proven).
+Two upgrades preserved all stable state (posts, rotated author token, SPA
+assets, google_client_id). google_client_id set as the OIDC audience; SPA
+rebuilt with VITE_GOOGLE_CLIENT_ID + re-uploaded (GIS sign-in live in the
+PostView chunk).
+
+Proven on mainnet (real icp0.io): the OIDC path REJECTS invalid tokens
+in-canister natively — garbage → 401 "compact JWT must have 3 parts";
+well-formed token with a bogus kid → 401 "no JWK matched kid=… even after
+a JWKS refresh" (proves decode → LIVE Google JWKS outcall → refresh →
+reject, all in-canister). The signature-ACCEPT leg (native RS256 verify of
+a valid Google signature) is proven separately in oidc_spike (KAT + real
+Google 2048-bit key parsing); composing them requires a browser-minted
+Google id_token with aud=<client id>, which only a real browser sign-in
+produces (Google won't sign headlessly) — that final click is the user's.
+Comment loop (submit→pending→moderate→certified) proven with the gated dev
+provider locally; on mainnet it runs the moment a real session exists.
+Cost: 4.96T cycles remain (native upgrades were ~free).
