@@ -527,3 +527,31 @@ it anyway); dfx install accepts the raw patched wasm; a backgrounded
 - Still pending from v1.1: first real push must validate the wasm-build +
   pocketic GitHub Actions jobs; PyPI trusted-publisher one-time setup;
   mainnet verification run (user-funded) incl. sign-on-mainnet cost check.
+
+## Post-v1.1 watch-items (architect review, 2026-07-03)
+
+- **Init cycles trend (63.2B at v1.1):** interpreter boot is a fixed tax
+  on every install/upgrade and grows with the module surface. The PocketIC
+  budget gate holds the line at 80B — watch the TREND across releases,
+  not just the threshold; this number eventually decides whether a fat
+  app can still upgrade itself.
+- **The Kybra ceiling tally** (the quiet case for keeping the Basilisk
+  seam clean): (1) Schnorr — replica has the keys, CDK lacks the binding;
+  (2) the _pyre_native seam patches Kybra's GENERATED crate — a CDK bump
+  can break it (build_native.sh asserts loudly if the shape drifts);
+  (3) basename flattening constrains framework file naming; (4) the
+  Candid no-alias limitation. Each is fine alone; together they say the
+  ceiling has Kybra's name on it, not ICP's.
+- **Release order (ratified):** tag v1.0.0 in history (done, ca3fb61);
+  publish **v1.1.0 as the inaugural PyPI release** AFTER the v1.1 mainnet
+  run — verify-then-publish. Version aligned to 1.1.0 (pyproject +
+  __version__; they had drifted 0.2.0 vs 0.1.0).
+- **The stranger test is still unrun** and got MORE valuable with the
+  bigger v1.1 doc surface (crypto threat model, sign, adapters). Run it
+  against the PUBLISHED package + docs after the PyPI release; treat
+  every stumble as a docs bug.
+- **v1.1 mainnet run needs NO new funding:** ledger 8.909T + ~0.4T per
+  canister covers upgrades + signing (~26B/sig) + the adapter fan-out
+  gate. The adapter gate is the one item local can't fake (real
+  PostgREST upsert semantics under real 13x fan-out) — needs a
+  user-provided free-tier Supabase project (URL + anon key).
