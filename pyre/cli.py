@@ -13,7 +13,7 @@ import sys
 RESERVED_BASENAMES = {
     # pyre framework modules
     "application", "http_types", "routing", "gateway", "kv", "data", "auth",
-    "cors", "validation", "certification", "transform", "outcall", "errors",
+    "cors", "validation", "certification", "transform", "outcall", "errors", "static",
     "dev", "cli", "_runtime", "_stubs", "urllib_request",
     "prandom", "ptime", "puuid",
     # kybra-internal modules
@@ -196,6 +196,195 @@ def cmd_dev(args):
     return 1
 
 
+def _http_json(method, url, token=None, payload=None, timeout=60):
+    """One JSON-over-HTTP exchange. Returns (status, parsed_body_or_None).
+
+    Raises on transport errors (connection refused, DNS, timeout); HTTP
+    error statuses are returned, not raised."""
+    import json as _json
+    import urllib.error
+    import urllib.request
+
+    headers = {"accept": "application/json"}
+    if token:
+        headers["authorization"] = "Bearer " + token
+    data = None
+    if payload is not None:
+        data = _json.dumps(payload).encode("utf-8")
+        headers["content-type"] = "application/json"
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
+            body, status = resp.read(), resp.status
+    except urllib.error.HTTPError as e:
+        body, status = e.read(), e.code
+    try:
+        parsed = _json.loads(body.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        parsed = None
+    return status, parsed
+
+
+def _push_call(method, url, token, payload, tries=3):
+    """_http_json with retries (transport errors and 5xx; backoff 1s/2s)."""
+    import time as _time
+
+    delay = 1.0
+    last_error = None
+    for attempt in range(tries):
+        try:
+            status, parsed = _http_json(method, url, token, payload)
+        except Exception as e:  # noqa: BLE001 — URLError, socket, timeout
+            last_error = e
+        else:
+            if status < 500 or attempt == tries - 1:
+                return status, parsed
+            last_error = "HTTP %d" % status
+        if attempt < tries - 1:
+            _time.sleep(delay)
+            delay *= 2
+    raise RuntimeError("request to %s failed after %d tries: %s" % (url, tries, last_error))
+
+
+def cmd_assets_push(args):
+    """Upload a built dist/ directory to a canister's static asset store.
+
+    Speaks the pyre.static upload protocol (manifest → chunks → finalize)
+    over plain HTTP, so it works identically against `pyre dev`, a local
+    replica, and mainnet — anywhere the app's admin routes are reachable."""
+    import base64
+    import gzip
+    import hashlib
+
+    from pyre.static import (
+        CHUNK_RAW_SIZE,
+        MAX_ASSET_BYTES,
+        content_type_for,
+        is_compressible,
+    )
+
+    dist = os.path.abspath(args.dist)
+    if not os.path.isdir(dist):
+        print("error: %s is not a directory" % dist, file=sys.stderr)
+        return 1
+    admin = args.url.rstrip("/") + args.admin_prefix
+
+    # 1. collect local files (gzipping compressible ones where it helps)
+    local = []
+    oversize = 0
+    for root, _dirs, names in os.walk(dist):
+        for name in sorted(names):
+            full = os.path.join(root, name)
+            rel = os.path.relpath(full, dist).replace(os.sep, "/")
+            with open(full, "rb") as f:
+                data = f.read()
+            if len(data) > MAX_ASSET_BYTES:
+                print(
+                    "  WARNING: skipping %s — %d bytes exceeds the %d-byte cap "
+                    "(canister responses must stay under ~2MB)"
+                    % (rel, len(data), MAX_ASSET_BYTES),
+                    file=sys.stderr,
+                )
+                oversize += 1
+                continue
+            gz = None
+            if not args.no_gzip and is_compressible(rel):
+                candidate = gzip.compress(data, 9, mtime=0)
+                if len(candidate) < len(data):
+                    gz = candidate
+            local.append((rel, data, gz))
+    if not local:
+        print("error: no uploadable files under %s" % dist, file=sys.stderr)
+        return 1
+
+    # 2. skip files the canister already has (same raw sha256, same gzip-ness)
+    status, listing = _push_call("GET", admin + "/list", args.token, None)
+    if status == 401:
+        print("error: token rejected (401) by %s" % admin, file=sys.stderr)
+        return 1
+    remote = (listing or {}).get("assets", {}) if status == 200 else {}
+    to_send, unchanged = [], 0
+    for rel, data, gz in local:
+        have = remote.get(rel)
+        if (
+            have
+            and have.get("sha256") == hashlib.sha256(data).hexdigest()
+            and bool(have.get("gzip")) == (gz is not None)
+        ):
+            unchanged += 1
+            continue
+        to_send.append((rel, data, gz))
+    if not to_send:
+        print("everything up to date (%d file(s) unchanged)" % unchanged)
+        return 0
+
+    # 3. manifest
+    manifest = {}
+    for rel, data, gz in to_send:
+        entry = {
+            "size": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "content_type": content_type_for(rel),
+        }
+        if gz is not None:
+            entry["gzip_size"] = len(gz)
+            entry["gzip_sha256"] = hashlib.sha256(gz).hexdigest()
+        manifest[rel] = entry
+    status, out = _push_call("POST", admin + "/manifest", args.token, {"assets": manifest})
+    accepted = (out or {}).get("accepted") or {}
+    rejected = (out or {}).get("rejected") or {}
+    for rel in sorted(rejected):
+        print("  WARNING: %s rejected: %s" % (rel, rejected[rel]), file=sys.stderr)
+    if status != 200 or not accepted:
+        print("error: manifest rejected (HTTP %d)" % status, file=sys.stderr)
+        return 1
+
+    # 4. chunks (raw + gzip variants)
+    wire_bytes = 0
+    for rel, data, gz in to_send:
+        if rel not in accepted:
+            continue
+        for variant, blob in (("raw", data), ("gzip", gz)):
+            if blob is None:
+                continue
+            slices = [
+                blob[i : i + CHUNK_RAW_SIZE] for i in range(0, len(blob), CHUNK_RAW_SIZE)
+            ] or [b""]
+            for index, piece in enumerate(slices):
+                payload = {
+                    "path": rel,
+                    "variant": variant,
+                    "index": index,
+                    "data": base64.b64encode(piece).decode("ascii"),
+                }
+                status, out = _push_call("POST", admin + "/chunk", args.token, payload)
+                if status != 200:
+                    print(
+                        "error: chunk %s [%s %d] rejected (HTTP %d): %s"
+                        % (rel, variant, index, status, out),
+                        file=sys.stderr,
+                    )
+                    return 1
+                wire_bytes += len(piece)
+        print("  %s (%d bytes%s)" % (rel, len(data), ", +gzip" if gz is not None else ""))
+
+    # 5. finalize (verifies sha256s server-side, then swaps atomically)
+    paths = [rel for rel, _, _ in to_send if rel in accepted]
+    status, out = _push_call("POST", admin + "/finalize", args.token, {"paths": paths})
+    errors = (out or {}).get("errors") or {}
+    if status != 200 or errors:
+        for rel in sorted(errors):
+            print("error: finalize %s: %s" % (rel, errors[rel]), file=sys.stderr)
+        print("error: finalize failed (HTTP %d)" % status, file=sys.stderr)
+        return 1
+    gz_count = sum(1 for _, _, gz in to_send if gz is not None)
+    print(
+        "pushed %d file(s), %d bytes on the wire (%d gzipped); %d unchanged, %d rejected"
+        % (len(paths), wire_bytes, gz_count, unchanged, len(rejected) + oversize)
+    )
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="pyre", description="PYRE — Python on the Internet Computer")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -214,6 +403,27 @@ def main(argv=None):
     p_dev.add_argument("--host", default="127.0.0.1")
     p_dev.add_argument("--port", type=int, default=8000)
     p_dev.set_defaults(func=cmd_dev)
+
+    p_assets = sub.add_parser("assets", help="manage a canister's static asset store")
+    assets_sub = p_assets.add_subparsers(dest="assets_command", required=True)
+    p_push = assets_sub.add_parser(
+        "push", help="upload a built frontend (dist/) via the pyre.static protocol"
+    )
+    p_push.add_argument("dist", help="path to the built frontend directory (e.g. dist/)")
+    p_push.add_argument(
+        "--url",
+        required=True,
+        help="app base URL: http://127.0.0.1:8000 (pyre dev), "
+        "http://<id>.localhost:4943 (replica), https://<id>.icp0.io (mainnet)",
+    )
+    p_push.add_argument("--token", required=True, help="bearer token for the admin routes")
+    p_push.add_argument(
+        "--admin-prefix",
+        default="/_pyre/static",
+        help="where static.admin_routes() is mounted (default: /_pyre/static)",
+    )
+    p_push.add_argument("--no-gzip", action="store_true", help="skip gzip variants")
+    p_push.set_defaults(func=cmd_assets_push)
 
     args = parser.parse_args(argv)
     return args.func(args)

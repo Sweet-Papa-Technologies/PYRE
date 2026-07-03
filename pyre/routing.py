@@ -47,8 +47,19 @@ def is_async_handler(fn):
 
 _PARAM_SEGMENT = re.compile(r"^\{([a-zA-Z_][a-zA-Z0-9_]*)\}$")
 
+# Catch-all tail: '/{name:path}' — matches the REST of the URL (slashes
+# included, may be empty). Only valid as the final segment. Routes with a
+# catch-all are matched at LOWER priority than every other route, so a
+# static-file catch-all can never shadow API routes (see Router.match).
+_CATCHALL_SEGMENT = re.compile(r"^\{([a-zA-Z_][a-zA-Z0-9_]*):path\}$")
+
 # Methods whose default execution context is update (they imply writes).
 _UPDATE_BY_DEFAULT = ("POST", "PUT", "DELETE", "PATCH")
+
+
+def is_catchall_path(path):
+    """True if the route path ends in a '{name:path}' catch-all segment."""
+    return bool(_CATCHALL_SEGMENT.match(path.split("/")[-1]))
 
 
 def compile_path(path):
@@ -57,7 +68,16 @@ def compile_path(path):
         raise ValueError("route path must start with '/': %r" % path)
     parts = path.split("/")
     pattern = []
-    for part in parts:
+    for i, part in enumerate(parts):
+        catchall = _CATCHALL_SEGMENT.match(part)
+        if catchall:
+            if i != len(parts) - 1:
+                raise ValueError(
+                    "catch-all '{%s:path}' must be the last segment: %r"
+                    % (catchall.group(1), path)
+                )
+            pattern.append("(?P<%s>.*)" % catchall.group(1))
+            continue
         m = _PARAM_SEGMENT.match(part)
         if m:
             pattern.append("(?P<%s>[^/]+)" % m.group(1))
@@ -72,6 +92,7 @@ class Route:
         self.path = path
         self.handler = handler
         self.regex = compile_path(path)
+        self.catch_all = is_catchall_path(path)
         if update is None:
             # Auto-promotion (requirements §6.1):
             #  - generator / async handlers need update context (outcalls)
@@ -115,14 +136,25 @@ class Router:
 
         route is None on no match; allowed_methods is non-empty when the
         path exists under other methods (→ 405).
+
+        Catch-all routes ('/{tail:path}') match at LOWER priority than every
+        exact/param route regardless of registration order, so mounting a
+        static-file catch-all never shadows API routes on the same app.
         """
         method = method.upper()
         allowed = []
+        fallback = fallback_params = None
         for route in self.routes:
             params = route.match(path)
             if params is None:
                 continue
             if route.method == method:
+                if route.catch_all:
+                    if fallback is None:
+                        fallback, fallback_params = route, params
+                    continue
                 return route, params, []
             allowed.append(route.method)
+        if fallback is not None:
+            return fallback, fallback_params, []
         return None, None, sorted(set(allowed))

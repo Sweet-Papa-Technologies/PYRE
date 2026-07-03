@@ -30,6 +30,7 @@ from pyre import data
 from pyre import kv
 from pyre import log
 from pyre import sign
+from pyre import static
 from pyre import ptime
 from pyre import prandom  # imports ptime; keep after it
 from pyre import puuid
@@ -62,6 +63,7 @@ __all__ = [
     "data",
     "log",
     "sign",
+    "static",
     "random",
     "time",
     "uuid",
