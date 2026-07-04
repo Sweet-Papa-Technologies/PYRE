@@ -78,7 +78,7 @@ def roll(req):
         "die":   prandom.randint(1, 6),   # unbiased, inclusive
         "f":     prandom.random(),        # float in [0, 1)
         "pick":  prandom.choice(["a", "b", "c"]),
-        "slug":  prandom.token_hex(8),    # 16 hex chars
+        "slug":  prandom.weak_token_hex(8),  # 16 hex chars — non-secret ids only
         "id":    prandom.uuid4(),         # RFC-4122 v4 string
     }
 ```

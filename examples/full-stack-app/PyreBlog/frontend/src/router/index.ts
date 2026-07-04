@@ -49,8 +49,12 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
-  scrollBehavior(_to, _from, saved) {
-    return saved ?? { top: 0 }
+  scrollBehavior(to, from, saved) {
+    if (saved) return saved
+    // Query-only changes on the same page (e.g. the tag filter / search on
+    // Home) must NOT yank the viewport to the top — keep the scroll position.
+    if (to.path === from.path) return false
+    return { top: 0 }
   },
 })
 

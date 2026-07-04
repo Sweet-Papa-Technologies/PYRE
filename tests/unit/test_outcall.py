@@ -44,6 +44,51 @@ def test_unsupported_method_rejected():
         urllib.urlopen("https://example.com/x", method="PUT")
 
 
+def test_allowlist_blocks_unlisted_host():
+    from pyre.outcall import OutcallBlocked, set_allowed_hosts
+
+    set_allowed_hosts(["api.example.com"])
+    try:
+        # subdomain of an allowed host is fine
+        urllib.urlopen("https://api.example.com/v1/x")
+        # exact host is fine
+        set_allowed_hosts(["example.com"])
+        urllib.urlopen("https://example.com/x")
+        urllib.urlopen("https://sub.example.com/x")  # subdomain match
+        # an unrelated host is refused before any call
+        with pytest.raises(OutcallBlocked):
+            urllib.urlopen("https://evil.test/steal")
+        # look-alike suffix must NOT match (notexample.com endswith example.com
+        # as a raw string, but not as a dotted subdomain)
+        with pytest.raises(OutcallBlocked):
+            urllib.urlopen("https://notexample.com/x")
+    finally:
+        set_allowed_hosts(None)
+
+
+def test_no_allowlist_allows_any_host():
+    from pyre.outcall import set_allowed_hosts
+
+    set_allowed_hosts(None)
+    fut = urllib.urlopen("https://anything.test/x")
+    assert isinstance(fut, OutcallFuture)
+
+
+def test_crlf_in_url_rejected():
+    from pyre.outcall import OutcallBlocked
+
+    with pytest.raises(OutcallBlocked):
+        urllib.urlopen("https://example.com/x\r\nHost: evil")
+
+
+def test_crlf_in_header_rejected():
+    from pyre.outcall import OutcallBlocked
+
+    with pytest.raises(OutcallBlocked):
+        urllib.urlopen("https://example.com/x",
+                       headers={"x-a": "ok\r\nX-Injected: 1"})
+
+
 def test_outcall_in_query_context_raises():
     ctx.in_query = True
     try:

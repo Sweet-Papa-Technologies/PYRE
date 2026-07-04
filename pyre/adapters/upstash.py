@@ -43,11 +43,27 @@ class UpstashError(PyreError):
     status = 502
 
 
-# Commands whose effect multiplies under outcall fan-out.
+# Commands whose effect multiplies (or otherwise diverges) under outcall
+# fan-out — running them ~13x does NOT converge to a single application.
+# An incomplete allowlist is worse than none (callers trust it), so this
+# aims to be comprehensive across counters, list/set/zset pops and moves,
+# bit ops, streams, HLLs, and TTL-mutating reads.
 NON_IDEMPOTENT = frozenset((
+    # counters / append
     "INCR", "INCRBY", "INCRBYFLOAT", "DECR", "DECRBY", "APPEND",
-    "LPUSH", "RPUSH", "LPUSHX", "RPUSHX", "LPOP", "RPOP", "SPOP",
-    "HINCRBY", "HINCRBYFLOAT", "ZINCRBY", "SETRANGE", "GETDEL",
+    "HINCRBY", "HINCRBYFLOAT", "ZINCRBY", "SETRANGE",
+    # push / pop (list, set, zset) — order- or membership-dependent
+    "LPUSH", "RPUSH", "LPUSHX", "RPUSHX", "LPOP", "RPOP", "SPOP", "GETDEL",
+    "ZPOPMIN", "ZPOPMAX", "LMPOP", "ZMPOP", "LINSERT",
+    "BLPOP", "BRPOP", "BZPOPMIN", "BZPOPMAX", "BLMPOP", "BZMPOP",
+    # moves between keys
+    "SMOVE", "RPOPLPUSH", "LMOVE", "BLMOVE", "BRPOPLPUSH",
+    # read-then-write in one shot
+    "GETSET", "GETEX",
+    # bit ops
+    "SETBIT", "BITOP", "BITFIELD",
+    # streams / HyperLogLog (each add appends distinct entries per replica)
+    "XADD", "PFADD", "PFMERGE",
 ))
 
 

@@ -87,7 +87,11 @@ pip install pyre-icp
 The distribution is `pyre-icp`; the import package and the CLI are both
 `pyre`. To deploy canisters you also need, one time:
 
-- **Python 3.10.x** (Kybra's RustPython targets 3.10 — [pyenv](https://github.com/pyenv/pyenv) recommended)
+- **Python 3.10.7** as Kybra's *build* interpreter (CPython, via
+  [pyenv](https://github.com/pyenv/pyenv)). It compiles your code to Wasm —
+  it is **not** what runs on-chain: the canister runs RustPython (a Rust
+  Python interpreter) plus Rust crates, so CPython 3.10's Oct-2026 EOL is a
+  build-toolchain note, not a running-service one. ([details](https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/docs/quickstart.md#a-note-on-python-310-and-what-actually-runs-on-chain))
 - **dfx** (the ICP SDK): `DFXVM_INIT_YES=true sh -ci "$(curl -fsSL https://internetcomputer.org/install.sh)"`
 - **Kybra** in your project's deploy venv: `pip install kybra==0.7.1` +
   `python -m kybra install-dfx-extension`
@@ -98,12 +102,18 @@ Then:
 pyre new myapp --template crud-kv     # bare-api | crud-kv | outbound-proxy
 cd myapp
 pyre dev src/app.py                   # instant local server, no replica needed
-dfx start --background && dfx deploy  # real local canister
-dfx deploy --network ic               # mainnet
+dfx start --background && dfx deploy  # real local canister — free, no wallet
+dfx deploy --network ic               # mainnet — needs cycles (free coupon path below)
 ```
 
-The [quickstart](https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/docs/quickstart.md)
-walks the whole path in ~15 minutes.
+Everything up to the last line is **free and needs no blockchain identity,
+ICP, or cycles** — build and exercise the whole app locally at $0. Only a
+*persistent mainnet* canister costs anything, and there's a free
+[cycles-faucet](https://faucet.dfinity.org) coupon for it. (Heads-up: a
+Kybra Wasm is ~27 MB, so ICP's playground / ICP Ninja "instant deploy"
+options don't fit it — mainnet is the public-URL path. The
+[quickstart](https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/docs/quickstart.md)
+walks it honestly, coupon included.)
 
 ## The API surface
 

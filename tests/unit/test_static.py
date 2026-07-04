@@ -181,6 +181,20 @@ def test_content_type_mapping():
     assert static.content_type_for("blob.xyz") == static.DEFAULT_CONTENT_TYPE
 
 
+def test_clean_content_type_rejects_control_chars_and_junk():
+    # A well-formed client-supplied type is kept…
+    assert static._clean_content_type("image/png", "a.bin") == "image/png"
+    # …but CR/LF (header-injection) or other control chars fall back to the
+    # extension-derived type rather than reaching a response header.
+    assert static._clean_content_type("text/html\r\nX-Evil: 1", "a.js") == \
+        static.content_type_for("a.js")
+    assert static._clean_content_type("a/b\x00c", "a.css") == static.content_type_for("a.css")
+    # Non-strings, empties, and absurd lengths also fall back.
+    assert static._clean_content_type(None, "a.svg") == static.content_type_for("a.svg")
+    assert static._clean_content_type("", "a.svg") == static.content_type_for("a.svg")
+    assert static._clean_content_type("x/" + "y" * 300, "a.svg") == static.content_type_for("a.svg")
+
+
 def test_cache_control_heuristic():
     # Vite-style hashed name -> immutable
     assert "immutable" in static.cache_control_for("assets/index-Dk7fmR6Y.js")

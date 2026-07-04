@@ -5,6 +5,7 @@ import {
   type BlogMeta,
   type Comment,
   type CommentList,
+  type PostCardData,
   type PostDetail,
   type PostInput,
   type PostList,
@@ -12,6 +13,28 @@ import {
   type Session,
 } from './types'
 import { sanitizeHtml } from '@/utils/sanitize'
+
+// --- list-card helpers: derive a text preview + cover from rendered HTML ---
+
+/** Plain-text excerpt from post HTML: strip tags, collapse whitespace,
+ *  truncate to ~180 chars on a word boundary with an ellipsis. */
+export function excerptFromHtml(html: string, max = 180): string {
+  const text = html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&[a-z]+;|&#\d+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (text.length <= max) return text
+  const cut = text.slice(0, max)
+  const lastSpace = cut.lastIndexOf(' ')
+  return (lastSpace > 60 ? cut.slice(0, lastSpace) : cut).trimEnd() + '…'
+}
+
+/** First <img src="…"> in the HTML, or null. */
+export function firstImageFromHtml(html: string): string | null {
+  const m = html.match(/<img[^>]+src=["']([^"']+)["']/i)
+  return m ? m[1] : null
+}
 
 // Same-origin by default (served from the canister). Configurable via env.
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')
@@ -89,13 +112,36 @@ export function detectCanisterId(): string | null {
 // ---- Public reads --------------------------------------------------------
 
 export const api = {
-  listPosts(params: { tag?: string; after?: string; limit?: number } = {}): Promise<PostList> {
+  async listPosts(params: { tag?: string; after?: string; limit?: number } = {}): Promise<PostList> {
     const q = new URLSearchParams()
     if (params.tag) q.set('tag', params.tag)
     if (params.after) q.set('after', params.after)
     if (params.limit) q.set('limit', String(params.limit))
     const qs = q.toString()
-    return request<PostList>(`/posts${qs ? `?${qs}` : ''}`)
+    const res = await request<{
+      items?: Array<Record<string, unknown>>
+      next?: string | null
+      total?: number
+    }>(`/posts${qs ? `?${qs}` : ''}`)
+    // The list endpoint returns the rendered `html` but no `excerpt`/cover;
+    // derive both client-side so cards show a text preview and an image
+    // header without a backend change.
+    const items = (res.items ?? []).map((raw) => {
+      const html = String(raw.html ?? '')
+      return {
+        slug: String(raw.slug ?? ''),
+        title: String(raw.title ?? ''),
+        tags: (raw.tags as string[]) ?? [],
+        status: String(raw.status ?? ''),
+        published_at: Number(raw.published_at ?? 0),
+        updated_at: Number(raw.updated_at ?? 0),
+        views: Number(raw.views ?? 0),
+        url: String(raw.url ?? ''),
+        excerpt: (raw.excerpt as string) || excerptFromHtml(html),
+        coverImage: firstImageFromHtml(html),
+      } as PostCardData
+    })
+    return { items, next: res.next ?? null, total: res.total }
   },
 
   // The backend serves a published post as CERTIFIED JSON:

@@ -119,11 +119,21 @@ def _extract_basic(request):
     return username, password
 
 
-def _dict_checker(users):
-    """check(username, password) over {username: sha256_hexdigest | plaintext}.
+def _dict_checker(users, allow_plaintext=False):
+    """check(username, password) over {username: sha256_hexdigest}.
 
     Scans every entry with constant-time comparisons on both username and
     password — no early exit, no timing signal for "user exists".
+
+    By default ONLY the sha256 hex digest of the presented password is
+    compared against the stored value, so the stored hash is not itself a
+    valid credential: a node operator who reads the hash out of canister
+    state (which they can — that is the whole reason to store a hash) cannot
+    replay it verbatim as the password. Accepting the stored hash *as* a
+    password would defeat the mitigation it exists for.
+
+    allow_plaintext=True (dev only) additionally accepts a stored plaintext
+    password, so `users={"bob": "hunter2"}` works for local iteration.
     """
     entries = [(str(u), str(v)) for u, v in users.items()]
 
@@ -132,7 +142,9 @@ def _dict_checker(users):
         matched = False
         for stored_user, stored_secret in entries:
             user_ok = _ct_equal(username, stored_user)
-            secret_ok = _ct_equal(digest, stored_secret) | _ct_equal(password, stored_secret)
+            secret_ok = _ct_equal(digest, stored_secret)
+            if allow_plaintext:
+                secret_ok = secret_ok | _ct_equal(password, stored_secret)
             if user_ok and secret_ok:
                 matched = True
         return matched
@@ -140,23 +152,28 @@ def _dict_checker(users):
     return check
 
 
-def require_basic(users, realm="pyre", exempt=()):
+def require_basic(users, realm="pyre", exempt=(), allow_plaintext=False):
     """Build a before_request hook enforcing HTTP Basic auth (RFC 7617).
 
     `users` is a dict of {username: sha256_hexdigest_of_password} — store
-    password HASHES, per the WS-C guardrail (plaintext values also work,
-    for dev) — or a callable check(username, password) -> bool:
+    password HASHES, per the WS-C guardrail — or a callable
+    check(username, password) -> bool:
 
         import hashlib
         app.before_request(auth.require_basic(
             users={"alice": hashlib.sha256(b"s3cret").hexdigest()},
             realm="pyre", exempt=("/health",)))
 
+    The stored hash is compared only against sha256(presented password), so
+    it is not a password-equivalent — an operator who reads it from state
+    cannot replay it. Pass allow_plaintext=True (dev only) to also accept
+    stored plaintext passwords like `{"bob": "hunter2"}`.
+
     Failures answer 401 with `WWW-Authenticate: Basic realm="<realm>"`;
     OPTIONS preflights pass through. On success the username is attached
     as `request.user`.
     """
-    check = users if callable(users) else _dict_checker(users)
+    check = users if callable(users) else _dict_checker(users, allow_plaintext=allow_plaintext)
     exempt_paths = set(exempt)
     challenge = 'Basic realm="%s"' % realm
 

@@ -1,14 +1,38 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { PostCardData } from '@/api/types'
 import { formatDate, formatCount } from '@/utils/format'
+import coverCertified from '@/assets/covers/cover-certified.webp'
+import coverFlame from '@/assets/covers/cover-flame.webp'
+import coverNetwork from '@/assets/covers/cover-network.webp'
+import coverCode from '@/assets/covers/cover-code.webp'
 
-defineProps<{ post: PostCardData }>()
+const props = defineProps<{ post: PostCardData }>()
 defineEmits<{ (e: 'tag', tag: string): void }>()
+
+const PLACEHOLDERS = [coverFlame, coverCertified, coverNetwork, coverCode]
+
+// Pick a themed placeholder by tag when possible, else a stable per-slug
+// choice so a given post always shows the same cover.
+const cover = computed(() => {
+  if (props.post.coverImage) return props.post.coverImage
+  const tags = (props.post.tags ?? []).map((t) => t.toLowerCase())
+  if (tags.some((t) => /cert|secur|verif/.test(t))) return coverCertified
+  if (tags.some((t) => /pyre|announce|release/.test(t))) return coverFlame
+  if (tags.some((t) => /icp|internet-computer|network|consensus/.test(t))) return coverNetwork
+  if (tags.some((t) => /python|kybra|code|api/.test(t))) return coverCode
+  let h = 0
+  for (const c of props.post.slug) h = (h + c.charCodeAt(0)) % PLACEHOLDERS.length
+  return PLACEHOLDERS[h]
+})
 </script>
 
 <template>
   <article class="card glass">
+    <RouterLink :to="{ name: 'post', params: { slug: post.slug } }" class="card-cover" tabindex="-1" aria-hidden="true">
+      <img :src="cover" alt="" loading="lazy" />
+    </RouterLink>
     <RouterLink :to="{ name: 'post', params: { slug: post.slug } }" class="card-link">
       <div class="card-body">
         <div class="meta">
@@ -41,7 +65,7 @@ defineEmits<{ (e: 'tag', tag: string): void }>()
 .card {
   display: flex;
   flex-direction: column;
-  padding: 1.5rem;
+  padding: 0;
   transition:
     transform 0.18s ease,
     border-color 0.18s ease,
@@ -49,25 +73,41 @@ defineEmits<{ (e: 'tag', tag: string): void }>()
   position: relative;
   overflow: hidden;
 }
-.card::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 3px;
-  background: var(--pp-flame-gradient);
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
 .card:hover {
   transform: translateY(-4px);
   border-color: var(--pp-border-strong);
   box-shadow: var(--pp-shadow);
 }
-.card:hover::before {
-  opacity: 1;
+.card-cover {
+  display: block;
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--pp-bg-2);
+  border-bottom: 1px solid var(--pp-border);
+}
+.card-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.35s ease;
+}
+.card-cover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 55%, color-mix(in srgb, var(--pp-surface-solid) 55%, transparent));
+  pointer-events: none;
+}
+.card:hover .card-cover img {
+  transform: scale(1.04);
 }
 .card-link {
   color: inherit;
+}
+.card-body {
+  padding: 1.25rem 1.5rem 0;
 }
 .meta {
   display: flex;
@@ -104,9 +144,11 @@ defineEmits<{ (e: 'tag', tag: string): void }>()
   flex-wrap: wrap;
   gap: 0.4rem;
   margin: 1rem 0 0.4rem;
+  padding: 0 1.5rem;
 }
 .read-more {
   margin-top: 0.75rem;
+  padding: 0 1.5rem 1.5rem;
   font-weight: 700;
   font-size: 0.9rem;
 }

@@ -28,7 +28,8 @@ const now = Math.floor(Date.now() / 1000)
 const day = 86400
 
 const ANNOUNCEMENT_HTML = `
-<p>Today the post you are reading is its own proof of concept: it is being served to you as a <strong>certified query response</strong> from a Python program running <em>inside</em> an Internet Computer canister. No web server, no CDN, no database — just <code>pip install pyre-icp</code> and a deploy.</p>
+<p><strong>PYRE is out.</strong> It is a Flask-flavored Python framework from <a href="https://sweetpapatechnologies.com">Sweet Papa Technologies</a> that runs your backend <em>inside</em> an Internet Computer canister. The post you are reading is its own release note: it is being served to you as a <strong>certified query response</strong> from a Python program, with no web server, no CDN, and no database behind it — just <code>pip install pyre-icp</code> and a deploy.</p>
+<p>Source, docs, and templates live on GitHub: <a href="https://github.com/Sweet-Papa-Technologies/PYRE">github.com/Sweet-Papa-Technologies/PYRE</a>.</p>
 <h2>Why certify a blog post?</h2>
 <p>Because on the open web you are always trusting the machine that served you. A certified response removes that trust: the canister commits the exact bytes of this page into its certified state tree, and the subnet signs the root with its chain key. Any gateway — or you, locally — can verify the signature and prove the content was not altered by the node, a proxy, or anyone in between.</p>
 <blockquote><p>The interesting property is not that the post is on a blockchain. It is that <em>tampering is detectable by the reader</em>, with math, not with terms of service.</p></blockquote>
@@ -127,7 +128,7 @@ kv.set("session:" + session_id, identity, ttl=86400)
 const seed: Array<Omit<MockPost, 'id' | 'schema_version'>> = [
   {
     slug: 'hello-pyrepress',
-    title: 'Introducing PyrePress: this post can prove it was not tampered with',
+    title: 'Introducing PYRE: Python on the Internet Computer, served certified',
     markdown: '# announcement',
     html: ANNOUNCEMENT_HTML,
     tags: ['announcement', 'pyre', 'certification'],
@@ -245,7 +246,11 @@ const iso = (s: number) => (s ? `${new Date(s * 1000).toISOString().slice(0, 19)
 
 // Mirrors backend _render_post_page: article + embedded JSON blob.
 function postPage(p: MockPost): Response {
-  const meta = {
+  // Mirror the real backend's GET /api/posts/{slug} JSON envelope
+  // ({post, verify}) so the client's getPost() parses it identically in dev
+  // mock mode. (Earlier this returned the certified HTML shell, which the
+  // JSON client could not parse — dev-only mismatch.)
+  const post = {
     slug: p.slug,
     title: p.title,
     tags: p.tags,
@@ -256,19 +261,18 @@ function postPage(p: MockPost): Response {
     updated_at_iso: iso(p.updated_at),
     views: p.views,
     schema_version: p.schema_version,
+    html: p.html,
+  }
+  const verify = {
     canister_id: CANISTER_ID,
     certified: true,
-    verify: 'This response carries an IC-Certificate header.',
+    schema_version: p.schema_version,
+    note: 'This response carries an IC-Certificate header.',
   }
-  const doc =
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${p.title}</title></head><body>` +
-    `<article><h1>${p.title}</h1><p class="pp-meta">Published ${iso(p.published_at)} · ${p.views} views</p>${p.html}</article>` +
-    `<script type="application/json" id="pyrepress-post">${JSON.stringify(meta)}</script>` +
-    `</body></html>`
-  return new Response(doc, {
+  return new Response(JSON.stringify({ post, verify }), {
     status: 200,
     headers: {
-      'content-type': 'text/html; charset=utf-8',
+      'content-type': 'application/json; charset=utf-8',
       'ic-certificate':
         'certificate=:2dn3omR0cmVlgwGDAYIEWCB86Mock5DevOnlyPlaceholderCertBytesXneW5jZXJ0aWZpZWRfZGF0YYIDWCA=:, tree=:2dn3gwGDAktodHRwX2Fzc2V0c4MBggRYIA==:',
     },

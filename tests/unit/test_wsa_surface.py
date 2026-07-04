@@ -111,7 +111,7 @@ def test_after_hook_modifies_response():
 
 
 def test_after_hook_must_return_response():
-    app = App()
+    app = App(debug=True)  # debug so the internal message is surfaced to assert on
 
     @app.after_request
     def broken(req, resp):
@@ -125,6 +125,25 @@ def test_after_hook_must_return_response():
     response = run_update(app, make_request(path="/x"))
     assert response.status == 500
     assert "after_request" in body_json(response)["message"]
+
+
+def test_500_does_not_leak_exception_message_by_default():
+    # Regression for the info-disclosure fix: a plain (non-debug) app must
+    # NOT reflect the raw exception string to the client.
+    app = App()
+
+    @app.after_request
+    def broken(req, resp):
+        return None
+
+    @app.get("/x")
+    def x(req):
+        return Response.json({})
+
+    response = run_update(app, make_request(path="/x"))
+    assert response.status == 500
+    assert body_json(response) == {"error": "internal server error"}
+    assert "after_request" not in response.body.decode("utf-8")
 
 
 def test_hooks_run_in_update_path():

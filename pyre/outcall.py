@@ -45,6 +45,78 @@ DEFAULT_MAX_RESPONSE_BYTES = 16_384
 _SIZE_ERROR_MARKERS = ("max_response_bytes", "body exceeds size limit", "response is too large")
 
 
+class OutcallBlocked(PyreError):
+    """The outcall destination is not permitted by the configured allowlist."""
+
+    status = 403
+
+
+# Optional SSRF guard. None → no allowlist (the platform still enforces
+# https + no redirects). Set it when any outcall URL is influenced by
+# request input: without it a user-controlled URL can point the canister —
+# and its credential-bearing headers — at an attacker's host.
+_allowed_hosts = None
+
+
+def set_allowed_hosts(hosts):
+    """Restrict outbound outcall destinations to an allowlist of hosts.
+
+    hosts: an iterable of hostnames, or None to clear the allowlist. A
+    destination matches if its host equals an entry or is a subdomain of
+    one ("api.example.com" matches an allowlisted "example.com"). Hosts
+    outside the list raise OutcallBlocked before any call is made.
+
+        from pyre import outcall
+        outcall.set_allowed_hosts(["api.stripe.com", "www.googleapis.com"])
+
+    This is defense-in-depth against SSRF; apply it whenever an outcall URL
+    is built from user input.
+    """
+    global _allowed_hosts
+    _allowed_hosts = None if hosts is None else tuple(str(h).lower().strip(".") for h in hosts)
+
+
+def _split_scheme_host(url):
+    """Dependency-free (scheme, host) extraction for allowlist/scheme checks.
+
+    Returns both lowercased; host has any userinfo, port and IPv6 brackets
+    stripped. Kept deliberately small so it runs the same in-canister
+    (RustPython) as on host CPython.
+    """
+    scheme, _, rest = url.partition("://")
+    if not _:
+        scheme, rest = "", url
+    authority = rest
+    for sep in ("/", "?", "#"):
+        cut = authority.find(sep)
+        if cut != -1:
+            authority = authority[:cut]
+    if "@" in authority:
+        authority = authority.rsplit("@", 1)[1]
+    host = authority
+    if host.startswith("["):
+        host = host[1:host.find("]")] if "]" in host else host[1:]
+    elif ":" in host:
+        host = host.rsplit(":", 1)[0]
+    return scheme.lower(), host.lower()
+
+
+def _check_destination(url):
+    if "\r" in url or "\n" in url:
+        raise OutcallBlocked("outcall URL contains a CR/LF control character")
+    if _allowed_hosts is None:
+        return
+    _scheme, host = _split_scheme_host(url)
+    for allowed in _allowed_hosts:
+        if host == allowed or host.endswith("." + allowed):
+            return
+    raise OutcallBlocked(
+        "outcall to host %r is not in the allowlist set via "
+        "pyre.outcall.set_allowed_hosts(...) — refusing to send (SSRF guard)"
+        % host
+    )
+
+
 class UrlResponse:
     """What `await urlopen(...)` evaluates to. urllib-addinfourl-flavored."""
 
@@ -83,12 +155,20 @@ class OutcallFuture:
                 "HTTPS outcalls need update context; mark the route update=True "
                 "(route %s runs as a query)" % url
             )
+        _check_destination(url)
         if isinstance(data, str):
             data = data.encode("utf-8")
         self.url = url
         self.method = method
         self.data = data
-        self.headers = {str(k): str(v) for k, v in (headers or {}).items()}
+        self.headers = {}
+        for k, v in (headers or {}).items():
+            k, v = str(k), str(v)
+            if "\r" in k or "\n" in k or "\r" in v or "\n" in v:
+                raise OutcallBlocked(
+                    "outcall header %r contains a CR/LF control character" % k
+                )
+            self.headers[k] = v
         self.transform_name = transform_name
         self.max_response_bytes = int(max_response_bytes)
         self.cycles = DEFAULT_CYCLES if cycles is None else int(cycles)

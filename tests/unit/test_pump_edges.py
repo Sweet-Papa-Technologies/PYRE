@@ -76,7 +76,7 @@ def test_exception_through_await_recovers_and_continues():
 
 
 def test_exception_through_await_propagates_to_500():
-    app = App()
+    app = App(debug=True)  # debug so the propagated message is visible to assert on
 
     @app.get("/q", update=True)
     async def q(req):
