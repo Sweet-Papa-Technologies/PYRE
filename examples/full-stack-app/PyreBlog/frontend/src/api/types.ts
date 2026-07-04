@@ -11,6 +11,8 @@ export interface PostCardData {
   views: number
   excerpt: string
   url: string
+  /** First <img> src found in the post body, if any (cover image). */
+  coverImage?: string | null
 }
 
 export interface PostList {

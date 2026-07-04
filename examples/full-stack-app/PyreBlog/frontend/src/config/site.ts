@@ -12,7 +12,7 @@ export const SITE = {
       'Write recognizable Python — Flask-style routes, a data layer, outbound HTTP — and run it on the Internet Computer. No Rust, no Motoko, no Candid.',
     install: 'pip install pyre-icp',
     github: 'https://github.com/Sweet-Papa-Technologies/PYRE',
-    docs: 'https://github.com/Sweet-Papa-Technologies/PYRE/tree/main/docs',
+    docs: 'https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/docs/README.md',
     quickstart:
       'https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/docs/quickstart.md',
     pypi: 'https://pypi.org/project/pyre-icp/',

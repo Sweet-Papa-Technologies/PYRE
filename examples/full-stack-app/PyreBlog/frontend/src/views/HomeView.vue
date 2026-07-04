@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import { usePostsStore } from '@/stores/posts'
 import { apiUrl } from '@/api/client'
 import { SITE, PYRE_FEATURES } from '@/config/site'
+import { RSS_SVG } from '@/utils/icons'
 import FlameLogo from '@/components/FlameLogo.vue'
 import PostCard from '@/components/PostCard.vue'
 import PostCardSkeleton from '@/components/PostCardSkeleton.vue'
@@ -15,6 +16,19 @@ const posts = usePostsStore()
 const route = useRoute()
 const router = useRouter()
 const feedUrl = apiUrl('/feed.xml')
+
+// Client-side search over the loaded posts (title / excerpt / tags). Works
+// alongside the server-side tag filter; empty query shows everything.
+const search = ref('')
+const searching = computed(() => search.value.trim().length > 0)
+const visibleItems = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  if (!q) return posts.items
+  return posts.items.filter((p) => {
+    const hay = `${p.title} ${p.excerpt ?? ''} ${(p.tags ?? []).join(' ')}`.toLowerCase()
+    return hay.includes(q)
+  })
+})
 
 const copied = ref(false)
 let copyTimer: ReturnType<typeof setTimeout> | undefined
@@ -133,9 +147,24 @@ watch(
     <section class="pp-container feed">
       <div class="feed-head">
         <h2>Latest news</h2>
-        <a class="rss" :href="feedUrl" target="_blank" rel="noopener">
-          <i class="pi pi-rss" /> Subscribe
-        </a>
+        <div class="feed-tools">
+          <div class="search">
+            <i class="pi pi-search" />
+            <input
+              v-model="search"
+              type="search"
+              class="search-input"
+              placeholder="Search posts…"
+              aria-label="Search posts"
+            />
+            <button v-if="searching" class="search-clear" aria-label="Clear search" @click="search = ''">
+              <i class="pi pi-times" />
+            </button>
+          </div>
+          <a class="rss" :href="feedUrl" target="_blank" rel="noopener">
+            <span class="rss-ico" v-html="RSS_SVG" /> Subscribe
+          </a>
+        </div>
       </div>
 
       <TagFilter :tags="posts.allTags" :active="posts.activeTag" @select="selectTag" />
@@ -163,11 +192,21 @@ watch(
         message="This flame is freshly lit. Once the author publishes, certified posts appear here."
       />
 
+      <!-- No search matches -->
+      <EmptyState
+        v-else-if="searching && !visibleItems.length"
+        icon="pi-search"
+        title="No matching posts"
+        :message="`Nothing matches “${search}”. Try a different term or clear the search.`"
+      >
+        <Button label="Clear search" icon="pi pi-times" outlined @click="search = ''" />
+      </EmptyState>
+
       <!-- Posts -->
       <template v-else>
         <div class="grid">
           <PostCard
-            v-for="(p, i) in posts.items"
+            v-for="(p, i) in visibleItems"
             :key="p.slug"
             :post="p"
             :style="{ '--i': i % 10 }"
@@ -175,7 +214,7 @@ watch(
             @tag="selectTag"
           />
         </div>
-        <div v-if="posts.next" class="more">
+        <div v-if="posts.next && !searching" class="more">
           <Button
             label="Load more"
             icon="pi pi-chevron-down"
@@ -539,11 +578,66 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
   margin-bottom: 1.25rem;
 }
 .feed-head h2 {
   font-size: 1.5rem;
   margin: 0;
+}
+.feed-tools {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.search {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--pp-border);
+  background: var(--pp-surface);
+  transition: border-color 0.15s ease;
+  min-width: 220px;
+}
+.search:focus-within {
+  border-color: var(--pp-orange);
+}
+.search > .pi-search {
+  color: var(--pp-text-faint);
+  font-size: 0.9rem;
+}
+.search-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--pp-text);
+  font: inherit;
+  font-size: 0.9rem;
+}
+.search-input::placeholder {
+  color: var(--pp-text-faint);
+}
+.search-input::-webkit-search-cancel-button {
+  display: none;
+}
+.search-clear {
+  display: inline-grid;
+  place-items: center;
+  background: none;
+  border: none;
+  color: var(--pp-text-faint);
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.85rem;
+}
+.search-clear:hover {
+  color: var(--pp-amber);
 }
 .rss {
   display: inline-flex;
@@ -555,6 +649,10 @@ watch(
 }
 .rss:hover {
   color: var(--pp-amber);
+}
+.rss-ico {
+  display: inline-flex;
+  align-items: center;
 }
 .grid {
   display: grid;

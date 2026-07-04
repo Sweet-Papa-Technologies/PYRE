@@ -9,6 +9,7 @@ import { useMetaStore } from '@/stores/meta'
 import { useTheme } from '@/composables/useTheme'
 import { apiUrl } from '@/api/client'
 import { SITE } from '@/config/site'
+import { RSS_SVG } from '@/utils/icons'
 
 const auth = useAuthStore()
 const meta = useMetaStore()
@@ -77,9 +78,6 @@ function go(name: string) {
               <i class="pi pi-sign-out" />
             </button>
           </template>
-          <RouterLink v-else to="/login" class="nav-link subtle" @click="menuOpen = false">
-            <i class="pi pi-key" /> Author
-          </RouterLink>
           <a :href="SITE.pyre.github" target="_blank" rel="noopener" class="signin-btn" @click="menuOpen = false">
             <i class="pi pi-github" /> Get PYRE
           </a>
@@ -132,15 +130,23 @@ function go(name: string) {
           <span class="footer-col-title">More</span>
           <a :href="SITE.company.url" target="_blank" rel="noopener"><i class="pi pi-building" /> {{ SITE.company.name }}</a>
           <a :href="SITE.ic.url" target="_blank" rel="noopener"><i class="pi pi-globe" /> Internet Computer</a>
-          <a :href="feedUrl" target="_blank" rel="noopener"><i class="pi pi-rss" /> RSS feed</a>
+          <a :href="feedUrl" target="_blank" rel="noopener"><span class="rss-ico" v-html="RSS_SVG" /> RSS feed</a>
         </nav>
       </div>
 
       <div class="pp-container footer-bottom">
         <span>© {{ year }} {{ SITE.company.name }} · MIT-licensed</span>
-        <a :href="SITE.company.url" target="_blank" rel="noopener" class="footer-madeby">
-          Built with <strong>PYRE</strong> by {{ SITE.company.name }}
-        </a>
+        <span class="footer-bottom-links">
+          <template v-if="auth.isAuthor">
+            <RouterLink to="/compose" class="footer-link">Compose</RouterLink>
+            <RouterLink to="/moderate" class="footer-link">Moderate</RouterLink>
+            <button class="footer-link as-btn" @click="auth.clearAuthorToken(); go('home')">Sign out</button>
+          </template>
+          <RouterLink v-else to="/login" class="footer-link">Author sign-in</RouterLink>
+          <a :href="SITE.company.url" target="_blank" rel="noopener" class="footer-madeby">
+            Built with <strong>PYRE</strong> by {{ SITE.company.name }}
+          </a>
+        </span>
       </div>
     </footer>
 
@@ -351,6 +357,38 @@ function go(name: string) {
 }
 .footer-madeby:hover {
   color: var(--pp-text-dim);
+}
+.footer-bottom-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.footer-link {
+  color: var(--pp-text-faint);
+  font-size: 0.82rem;
+  transition: color 0.15s ease;
+}
+.footer-link:hover {
+  color: var(--pp-amber);
+}
+.footer-link.as-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+.rss-ico {
+  display: inline-flex;
+  align-items: center;
+}
+.footer-col a .rss-ico {
+  width: 1rem;
+  color: var(--pp-text-faint);
+}
+.footer-col a:hover .rss-ico {
+  color: var(--pp-amber);
 }
 .footer-canister {
   display: inline-flex;
