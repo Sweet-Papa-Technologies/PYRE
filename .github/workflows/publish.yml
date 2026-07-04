@@ -7,12 +7,19 @@ name: publish
 # with `python -m build && twine upload dist/*` (token in ~/.pypirc).
 #
 # ── One-time setup to make this workflow work (recommended) ────────────────
-# 1. https://pypi.org/manage/project/pyre-icp/settings/publishing/ →
+# 1. Log in to PyPI as the account that OWNS the pyre-icp project
+#    (sweetpapatech), then:
+#    https://pypi.org/manage/project/pyre-icp/settings/publishing/ →
 #    "Add a new publisher":
-#       Owner             : Sweet-Papa-Technologies
+#       Owner             : Sweet-Papa-Technologies  # the GitHub org — NOT
+#                                                    # the PyPI username. Getting
+#                                                    # this wrong => invalid-publisher.
 #       Repository name   : PYRE
 #       Workflow name     : publish.yml
 #       Environment name  : pypi
+#    (These must exactly match the OIDC token claims: sub
+#     `repo:Sweet-Papa-Technologies/PYRE:environment:pypi`, workflow_ref
+#     `.../publish.yml`, environment `pypi`.)
 # 2. GitHub repo: Settings → Environments → create environment "pypi"
 #    (optionally with required reviewers so a human approves each publish).
 # Then: publishing = creating a GitHub release. Nothing to rotate, no
