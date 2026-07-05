@@ -1,0 +1,34 @@
+{
+  "name": "pyre",
+  "owner": {
+    "name": "Sweet Papa Technologies",
+    "url": "https://sweetpapatechnologies.com"
+  },
+  "metadata": {
+    "description": "The PYRE marketplace — the agent skill for building Python apps on the Internet Computer.",
+    "version": "1.2.1"
+  },
+  "plugins": [
+    {
+      "name": "pyre-icp",
+      "source": "./",
+      "description": "Build, run, and deploy PYRE apps — Flask-flavored Python backends on the Internet Computer (ICP), via Kybra (RustPython → WASM). Bundles the operational skill: canister project shape, the golden rules, Kybra build traps, and the capability quick-reference.",
+      "version": "1.2.1",
+      "author": {
+        "name": "Sweet Papa Technologies",
+        "url": "https://sweetpapatechnologies.com"
+      },
+      "homepage": "https://github.com/Sweet-Papa-Technologies/PYRE",
+      "license": "MIT",
+      "keywords": [
+        "pyre",
+        "icp",
+        "internet-computer",
+        "kybra",
+        "python",
+        "canister",
+        "web3"
+      ]
+    }
+  ]
+}

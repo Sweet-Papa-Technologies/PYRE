@@ -1,0 +1,23 @@
+{
+  "name": "pyre-icp",
+  "version": "1.2.1",
+  "description": "Build, run, and deploy PYRE apps — Flask-flavored Python backends on the Internet Computer (ICP), via Kybra (RustPython → WASM). Bundles the operational skill an agent needs: canister project shape, the golden rules, the Kybra build traps, and the capability quick-reference.",
+  "author": {
+    "name": "Sweet Papa Technologies",
+    "url": "https://sweetpapatechnologies.com"
+  },
+  "homepage": "https://github.com/Sweet-Papa-Technologies/PYRE",
+  "repository": "https://github.com/Sweet-Papa-Technologies/PYRE",
+  "license": "MIT",
+  "keywords": [
+    "pyre",
+    "icp",
+    "internet-computer",
+    "kybra",
+    "python",
+    "canister",
+    "web3",
+    "rustpython",
+    "flask"
+  ]
+}

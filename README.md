@@ -145,6 +145,20 @@ walks it honestly, coupon included.)
 [LLM/agent skill file](https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/SKILL.md) ·
 reference app: [examples/food_tracker](https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/examples/food_tracker/src/app.py)
 
+### Give your coding agent PYRE (Claude Code skill)
+
+This repo is a Claude Code marketplace. Teach your agent the framework — the golden
+rules, the Kybra build traps, the capability map — with two lines:
+
+```bash
+claude plugin marketplace add Sweet-Papa-Technologies/PYRE
+claude plugin install pyre-icp@pyre
+```
+
+Now Claude auto-loads the PYRE skill whenever you write canister code, debug a Kybra
+build, or deploy. (The skill is [SKILL.md](https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/SKILL.md) —
+installing it just keeps it current via `claude plugin update pyre-icp`.)
+
 ## The four ICP concepts PYRE teaches (and hides everything else)
 
 1. **Query vs. update calls.** Queries are fast, read-only, uncertified;
