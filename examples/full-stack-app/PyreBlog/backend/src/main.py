@@ -34,7 +34,7 @@ from pyre import oidc
 from pyre.gateway import dispatch_query, dispatch_update
 from pyre.transform import transform_management_response
 
-from app import app, reset_author_token_once, sync_certified_routes
+from app import app, sync_certified_routes
 
 # pyre.kv's stable-memory backing. Declared here (not inside pyre) because
 # Kybra registers StableBTreeMaps by static analysis of the canister source.
@@ -103,11 +103,6 @@ def pyre_init() -> void:
 
 @post_upgrade
 def pyre_post_upgrade() -> void:
-    # One-time author-token reset (see app.reset_author_token_once). Defined in
-    # app.py so it uses the same `from pyre import kv` binding that works inside
-    # canister methods (referencing `pyre.kv` here traps under Kybra's bundler).
-    reset_author_token_once()
-
     # Dynamic per-post routes live in heap memory, not the code, so they must
     # be rebuilt from the (upgrade-surviving) stable data after every upgrade.
     sync_certified_routes()

@@ -182,29 +182,6 @@ def unregister_certified_post(slug):
     unregister_certified_comments(slug)
 
 
-_TOKEN_RESET_MARKER = "auth:token_reset_2026_07_04"
-# sha256 of a fresh strong author token; the plaintext lives ONLY in the
-# operator's macOS Keychain (`pyrepress-author-token`), never in source.
-_TOKEN_RESET_HASH = "b9e55c324d52c78990bc92e27ec9537a4771ade53d189303b10f835577df8ccf"
-
-
-def reset_author_token_once():
-    """Author-token reset completed 2026-07-04: the previously-rotated strong
-    token was lost, so a fresh one (sha256 `_TOKEN_RESET_HASH`; plaintext in the
-    operator's Keychain only) was set on-chain and the marker below recorded.
-    Now a guarded no-op — future @post_upgrade runs leave the token untouched so
-    a later `PUT /api/meta {"token": …}` rotation survives upgrades. Also clears
-    the one-time diagnostic `reset_stamp` from meta. Uses the module's `kv`
-    binding (referencing `pyre.kv` inside a canister method traps under Kybra's
-    bundler)."""
-    if kv.get(_TOKEN_RESET_MARKER) is None:
-        kv.set(config.TOKEN_HASH_KEY, _TOKEN_RESET_HASH)
-        kv.set(_TOKEN_RESET_MARKER, True)
-    meta = kv.get(config.META_KEY)
-    if isinstance(meta, dict) and meta.pop("reset_stamp", None) is not None:
-        kv.set(config.META_KEY, meta)
-
-
 def sync_certified_routes():
     """(Re-)register a certified route per published post.
 
