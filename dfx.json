@@ -31,6 +31,10 @@
         "oidc_spike": {
             "type": "kybra",
             "main": "examples/oidc_spike/src/main.py"
+        },
+        "vnext_exercise": {
+            "type": "kybra",
+            "main": "examples/vnext_exercise/src/main.py"
         }
     }
 }

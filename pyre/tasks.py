@@ -320,6 +320,10 @@ def restore():
     now = platform.now_ns()
     for key in list_prefix("tasks", SCHEMA):
         record = kv.get(key)
+        if record.get("schema") != SCHEMA:
+            # Fail closed on foreign schemas rather than migrating unknown
+            # fields, matching _load/list.
+            raise TaskError("unsupported task schema %r in %s" % (record.get("schema"), key))
         name = record.get("name")
         if name in _aliases and _aliases[name] in _definitions:
             new = _aliases[name]
@@ -329,6 +333,19 @@ def restore():
             name = new
         if name not in _definitions:
             record["state"] = "orphaned"; record["enabled"] = False; _save(record); continue
+        # Reconcile a redeployed definition whose schedule/overlap/catch_up
+        # changed. On-chain the decorator defers all writes to this hook, so
+        # without this the durable record keeps the previous version's schedule.
+        definition = _definitions[name]
+        if record.get("definition_hash") != definition["definition_hash"]:
+            kind, schedule_ns = definition["kind"], definition["schedule_ns"]
+            record["kind"] = kind
+            record["interval_ns"] = None if kind == "once" else schedule_ns
+            record["run_at_ns"] = now + schedule_ns if kind == "once" else None
+            record["next_run_at_ns"] = now + schedule_ns
+            record["overlap"] = definition["overlap"]
+            record["catch_up"] = definition["catch_up"]
+            record["definition_hash"] = definition["definition_hash"]
         if record["state"] == "running":
             record["state"] = "scheduled"
             record["active_runs"] = 0

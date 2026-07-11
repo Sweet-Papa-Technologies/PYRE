@@ -207,3 +207,30 @@ def test_canister_registration_defers_stable_writes_and_timers_until_restore(mon
     tasks.restore()
     assert tasks.status("deferred")["state"] == "scheduled"
     assert _platform._adapter.timers
+
+
+def test_upgrade_reconciles_a_changed_schedule(monkeypatch):
+    # regression: on-chain the decorator defers to restore(), which only created
+    # missing records and never reconciled a changed definition_hash, so a
+    # changed interval kept the previous version's schedule forever.
+    monkeypatch.setattr(tasks, "in_canister", lambda: True)
+
+    @tasks.every(seconds=2, name="job")
+    def job_v1(): pass
+    tasks.restore()
+    assert tasks.status("job")["interval_ns"] == 2_000_000_000
+
+    tasks._reset_for_tests()  # simulate a redeploy rebuilding in-memory defs
+    @tasks.every(seconds=3600, name="job")
+    def job_v2(): pass
+    tasks.restore()
+    reconciled = tasks.status("job")
+    assert reconciled["interval_ns"] == 3_600_000_000_000
+    assert reconciled["kind"] == "interval"
+
+
+def test_restore_fails_closed_on_foreign_schema_record():
+    import pytest
+    kv.set(tasks._key("ghost"), {"schema": 999, "name": "ghost", "state": "scheduled"})
+    with pytest.raises(tasks.TaskError):
+        tasks.restore()

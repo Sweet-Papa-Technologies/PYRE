@@ -78,3 +78,14 @@ def test_row_limit_is_enforced_while_consuming_generator():
     with pytest.raises(AnalyticsLimitError, match="row"):
         Table.from_records(records(), Limits(rows=3))
     assert consumed == [0, 1, 2, 3]
+
+
+def test_pivot_rejects_column_value_colliding_with_index_name():
+    # regression: a column value stringifying to the index name overwrote the
+    # index cell with an aggregate, silently dropping the row key.
+    table = Table.from_records([
+        {"idx": "r1", "cat": "idx", "val": 5},
+        {"idx": "r1", "cat": "other", "val": 7},
+    ])
+    with pytest.raises(ValueError):
+        table.pivot(index="idx", columns="cat", values="val")

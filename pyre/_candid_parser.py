@@ -9,6 +9,7 @@ MAX_SOURCE_BYTES = 1_000_000
 MAX_DEPTH = 64
 MAX_FIELDS = 10_000
 MAX_ALIAS_DEPTH = 64
+MAX_RESOLVE_DEPTH = 256
 _TOKEN = re.compile(r'\s+|//[^\n]*|/\*.*?\*/|->|[A-Za-z_][A-Za-z0-9_]*|[0-9]+|"(?:\\.|[^"\\])*"|[{}():;,=]', re.S)
 _PRIMITIVES = {"null", "bool", "text", "principal", "blob", "nat", "int", "nat8", "nat16", "nat32", "nat64", "int8", "int16", "int32", "int64", "float32", "float64"}
 
@@ -42,6 +43,7 @@ class Parser:
         self.source, self.tokens, self.index = source, _tokens(source), 0
         self.aliases, self.max_depth, self.max_fields, self.max_alias_depth = {}, max_depth, max_fields, max_alias_depth
         self.field_count = 0
+        self._alias_cache = {}
 
     def peek(self): return self.tokens[self.index][0]
     def take(self): token = self.tokens[self.index]; self.index += 1; return token[0]
@@ -96,19 +98,30 @@ class Parser:
             return TypeSpec("alias", inner=token)
         offset = self.tokens[self.index - 1][1]; raise CandidSyntaxError(self.source, offset, token, "Candid type")
 
-    def resolve_alias(self, name, trail):
+    def resolve_alias(self, name, trail, depth=0):
         if name not in self.aliases:
             raise ValueError("unknown Candid type alias %s" % name)
         if name in trail: raise ValueError("recursive alias cycle: %s" % " -> ".join(trail + (name,)))
+        # A non-cyclic alias always expands to the same structure regardless of
+        # where it is referenced, so cache it. This turns a record whose fields
+        # both reference the next alias from O(2^n) structural duplication into
+        # O(n) resolution.
+        if name in self._alias_cache: return self._alias_cache[name]
         if len(trail) >= self.max_alias_depth: raise ValueError("alias depth exceeds %d" % self.max_alias_depth)
-        return self.resolve_type(self.aliases[name], trail + (name,))
+        resolved = self.resolve_type(self.aliases[name], trail + (name,), depth)
+        self._alias_cache[name] = resolved
+        return resolved
 
-    def resolve_type(self, spec, trail):
-        if spec.kind == "alias": return self.resolve_alias(spec.inner, trail)
+    def resolve_type(self, spec, trail, depth=0):
+        # Bound total resolved nesting so a deep alias chain of nested
+        # opts/vecs raises a Candid error rather than a bare RecursionError.
+        if depth > MAX_RESOLVE_DEPTH:
+            raise ValueError("Candid resolved nesting exceeds %d" % MAX_RESOLVE_DEPTH)
+        if spec.kind == "alias": return self.resolve_alias(spec.inner, trail, depth)
         if spec.kind in ("opt", "vec"):
-            return TypeSpec(spec.kind, inner=self.resolve_type(spec.inner, trail))
+            return TypeSpec(spec.kind, inner=self.resolve_type(spec.inner, trail, depth + 1))
         if spec.kind in ("record", "variant"):
-            fields = {name: self.resolve_type(value, trail) for name, value in spec.fields}
+            fields = {name: self.resolve_type(value, trail, depth + 1) for name, value in spec.fields}
             return TypeSpec.record(fields) if spec.kind == "record" else TypeSpec.variant(fields)
         return spec
 

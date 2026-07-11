@@ -143,6 +143,8 @@ class Table:
         labels = [str(value) for value in column_values]
         if len(set(labels)) != len(labels):
             raise ValueError("pivot values produce duplicate string column names")
+        if index in labels:
+            raise ValueError("pivot column value collides with the index column name %r" % index)
         buckets = {}
         for row in self.to_records(): buckets.setdefault(row.get(index), {}).setdefault(row.get(columns), []).append(row.get(values))
         output = []

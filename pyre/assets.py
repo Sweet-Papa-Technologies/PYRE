@@ -29,20 +29,26 @@ class AssetStore(ChunkStore):
                 if not left: start = max(0, manifest["size"] - int(right))
                 else: start = int(left)
                 if right and left: end = int(right)
-                if start < 0 or end < start or end >= manifest["size"]: raise ValueError()
+                # RFC 7233: clamp last-byte-pos past the end to length-1 rather
+                # than rejecting; only an out-of-range first-byte-pos is 416.
+                if end >= manifest["size"]: end = manifest["size"] - 1
+                if start < 0 or end < start or start >= manifest["size"]: raise ValueError()
             except (ValueError, TypeError):
                 return Response(b"", status=416, headers=[("content-range", "bytes */%d" % manifest["size"])])
             status = 206; headers.append(("content-range", "bytes %d-%d/%d" % (start, end, manifest["size"])))
-        first_index = start // self.chunk_size
+        # Chunks are physically addressed at the size stored in the manifest at
+        # finalize time, which may differ from this store's configured chunk_size.
+        chunk_size = manifest["chunk_size"]
+        first_index = start // chunk_size
         first, _ = self.read_chunk(asset_id, manifest["generation"], first_index)
-        first_start = start - first_index * self.chunk_size
-        first_end = min(len(first), end - first_index * self.chunk_size + 1)
+        first_start = start - first_index * chunk_size
+        first_end = min(len(first), end - first_index * chunk_size + 1)
         first = first[first_start:first_end]
         token = None
-        last_index = end // self.chunk_size
+        last_index = end // chunk_size
         if stream and first_index < last_index:
             token = self.token(asset_id, manifest["generation"], first_index + 1,
-                               start=start, end=end)
+                               start=start, end=end, chunk_size=chunk_size)
         elif not stream:
             # Explicit non-streaming is capped to one safe chunk. Callers must
             # opt into streaming for larger bodies rather than trigger a large
