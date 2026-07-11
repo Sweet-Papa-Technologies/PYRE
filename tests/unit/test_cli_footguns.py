@@ -100,4 +100,8 @@ def test_warn_footguns_silent_on_clean_source(tmp_path, capsys):
 
 
 def test_new_framework_basenames_are_reserved():
-    assert {"prandom", "ptime", "puuid"} <= RESERVED_BASENAMES
+    assert {
+        "prandom", "ptime", "puuid", "tasks", "candid", "xnet",
+        "testing", "assets", "analytics", "_platform", "_lifecycle",
+        "_namespace",
+    } <= RESERVED_BASENAMES

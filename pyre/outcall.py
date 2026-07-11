@@ -49,6 +49,7 @@ class OutcallBlocked(PyreError):
     """The outcall destination is not permitted by the configured allowlist."""
 
     status = 403
+    code = "PYRE-OUTCALL-BLOCKED"
 
 
 # Optional SSRF guard. None → no allowlist (the platform still enforces
@@ -268,7 +269,9 @@ def pump(handler_result):
         except StopIteration as stop:
             return getattr(stop, "value", None)
 
-        if isinstance(yielded, OutcallFuture):
+        if isinstance(yielded, OutcallFuture) or (
+            hasattr(yielded, "_to_kybra_call") and hasattr(yielded, "_process_call_result")
+        ):
             call_result = yield yielded._to_kybra_call()
             try:
                 to_send = yielded._process_call_result(call_result)
@@ -300,7 +303,9 @@ def pump_sync(handler_result, resolve):
         except StopIteration as stop:
             return getattr(stop, "value", None)
 
-        if isinstance(yielded, OutcallFuture):
+        if isinstance(yielded, OutcallFuture) or (
+            hasattr(yielded, "_to_kybra_call") and hasattr(yielded, "_process_call_result")
+        ):
             try:
                 to_send = resolve(yielded)
             except PyreError as e:

@@ -30,6 +30,7 @@ from kybra import (
 from kybra.canisters.management import HttpResponse, HttpTransformArgs
 
 import pyre.kv
+from pyre._lifecycle import run_init, run_post_upgrade
 from pyre.gateway import dispatch_query, dispatch_update
 from pyre.transform import transform_management_response
 
@@ -93,19 +94,28 @@ class HttpGatewayResponse(Record):
 
 @init
 def pyre_init() -> void:
-    # Certify route snapshots (and the skip-certification wildcard) so
-    # query responses verify against certified data from the first request.
-    app.recertify()
+    run_init(app)
 
 
 @post_upgrade
 def pyre_post_upgrade() -> void:
-    app.recertify()
+    run_post_upgrade(app)
 
 
 @query
 def http_request(req: HttpGatewayRequest) -> HttpGatewayResponse:
-    return dispatch_query(app, req)
+    response = dispatch_query(app, req)
+    strategy = response.get("streaming_strategy")
+    if strategy is not None:
+        strategy["Callback"]["callback"] = (ic.id(), "pyre_http_streaming_callback")
+    return response
+
+
+@query
+def pyre_http_streaming_callback(token: Token) -> StreamingCallbackHttpResponse:
+    from pyre.assets import streaming_callback
+
+    return streaming_callback(token["arbitrary_data"])
 
 
 @update

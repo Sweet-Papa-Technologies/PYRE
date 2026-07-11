@@ -62,6 +62,7 @@ from pyre.compat.urllib_request import default_transform
 
 class SupabaseError(PyreError):
     """PostgREST returned an error response."""
+    code = "PYRE-SUPABASE"
 
     status = 502
 

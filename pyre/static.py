@@ -330,24 +330,17 @@ def put_asset(path, body, content_type=None, gzip_body=None):
 
 def get_meta(path):
     """The asset's meta dict (cheap; no chunk reassembly), or None."""
-    return kv.get(_meta_key(path))
+    from pyre._asset_store import legacy_static_manifest
+    return legacy_static_manifest(path)
 
 
 def read_asset(path, variant="raw"):
     """Reassemble an asset's bytes for one variant, or None if absent."""
-    meta = get_meta(path)
-    if meta is None:
+    from pyre._asset_store import AssetNotFound, read_legacy_static
+    try:
+        return read_legacy_static(path, variant)
+    except AssetNotFound:
         return None
-    if variant == "gzip" and not meta.get("gzip"):
-        return None
-    count = meta["chunks"] if variant == "raw" else meta["gzip_chunks"]
-    parts = []
-    for index in range(count):
-        encoded = kv.get(_chunk_key(path, variant, index))
-        if encoded is None:
-            raise ValueError("asset %r missing %s chunk %d" % (path, variant, index))
-        parts.append(base64.b64decode(encoded))
-    return b"".join(parts)
 
 
 def list_assets():

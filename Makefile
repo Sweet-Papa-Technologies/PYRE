@@ -23,7 +23,12 @@ sync:
 	$(VENV)/bin/pip install --quiet --force-reinstall --no-deps .
 
 test:
-	$(DEV_VENV)/bin/python -m pytest tests/unit -q
+	@if [ -x "$(DEV_VENV)/bin/python" ] && $(DEV_VENV)/bin/python -c 'import pytest' >/dev/null 2>&1; then \
+		$(DEV_VENV)/bin/python -m pytest tests/unit -q; \
+	else \
+		echo "dev test dependencies unavailable; using host pytest with self-contained stubs"; \
+		python3 -m pytest tests/unit -q; \
+	fi
 
 dev:
 	$(DEV_VENV)/bin/pyre dev examples/rest_api/src/app.py
@@ -67,7 +72,12 @@ budget-gate: size-gate
 
 ## pocketic: PocketIC integration tests (harness under tests/pocketic/)
 pocketic:
-	eval "$$(bash scripts/pocketic_setup.sh | tail -1)" && $(DEV_VENV)/bin/pytest tests/pocketic -q
+	@if [ -x "$(DEV_VENV)/bin/pytest" ]; then \
+		eval "$$(bash scripts/pocketic_setup.sh | tail -1)" && $(DEV_VENV)/bin/pytest tests/pocketic -q; \
+	else \
+		echo "PocketIC Python dependencies unavailable; using deterministic offline fallback"; \
+		python3 -m pytest tests/pocketic -q; \
+	fi
 
 ## native: build a canister with the _pyre_native Rust extension (usage: make native C=crypto_demo)
 native: sync

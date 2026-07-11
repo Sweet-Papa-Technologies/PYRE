@@ -55,6 +55,7 @@ JWKS_TRANSFORM = "pyre_oidc_jwks_transform"
 
 class OidcError(PyreError):
     """Base class for every OIDC verification failure."""
+    code = "PYRE-OIDC"
 
     status = 401
 

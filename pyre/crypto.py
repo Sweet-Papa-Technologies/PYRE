@@ -86,12 +86,14 @@ TAG_LEN = 16
 
 class CryptoUnavailable(PyreError):
     """The requested primitive has no backend in this environment."""
+    code = "PYRE-CRYPTO-UNAVAILABLE"
 
 
 class AuthenticationFailed(PyreError):
     """AEAD open failed: wrong key, tampered ciphertext/nonce, or aad
     mismatch. Deliberately one error for all three — distinguishing them
     would leak information to an attacker."""
+    code = "PYRE-CRYPTO-AUTHENTICATION"
 
 
 def _b(data, what="data"):

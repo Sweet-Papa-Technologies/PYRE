@@ -9,6 +9,15 @@ for roughly **$0.40/month** on mainnet. Install it with `pip install pyre-icp`.
 This entire documentation site's demo — **PyrePress** — is itself a PYRE app,
 served straight from a canister.
 
+The normal package is the complete build. Release engineers may additionally
+produce a non-destructive slim wheel, excluding opt-in vNext modules, with
+`bash scripts/build_wheel.sh slim`; see `DECISIONS.md` for the exact profile.
+
+Maintainers testing vNext should use the copy/paste
+[`PYRE vNext Manual Testing Guide`](../internal-docs/PYRE-vNext-Manual-Testing-Guide.md)
+and review the accompanying
+[`Implementation and Security Review`](../internal-docs/PYRE-vNext-Implementation-and-Security-Review.md).
+
 > **Start here → [Quickstart](quickstart.md).** You can build and fully exercise
 > a PYRE app locally for free, in minutes, with no blockchain identity, no ICP,
 > and no cycles — only a persistent mainnet URL costs anything (there's a free
@@ -32,6 +41,12 @@ served straight from a canister.
 | [API reference](api.md) | `App` / `Request` / `Response` routing, `data`/`kv` collections over stable memory, `validate`, `auth`, and `sign` (threshold tECDSA + JWTs) |
 | [Static serving](static-serving.md) | `pyre.static` — host a built SPA (Vue/Vite/React `dist/`) from the canister with a certified index and chunked stable-memory assets; `pyre assets push` |
 | [Adapters](adapters.md) | `pyre.adapters` — Supabase (PostgREST) and Upstash Redis over outcalls, with amplification-safe writes |
+| [Persistent tasks](tasks.md) | Upgrade-safe intervals and one-shot work, including overlap and catch-up semantics |
+| [Candid and xnet](candid-xnet.md) | Deterministic `.did` generation and guarded typed cross-canister calls |
+| [Generalized assets](assets.md) | Resumable namespaced uploads, quotas, ranges, and public HTTP streaming |
+| [Testing](testing.md) | Supported in-process client and PocketIC environment guidance |
+| [Build audit](audit.md) | Offline dependency/source compatibility checks and stable CI output |
+| [Experimental analytics](analytics.md) | Bounded deterministic pure-Python tabular operations |
 
 ## Security & crypto
 

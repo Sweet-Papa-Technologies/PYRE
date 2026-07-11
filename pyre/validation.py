@@ -23,6 +23,7 @@ _TYPE_NAMES = {str: "str", int: "int", float: "float", bool: "bool", dict: "obje
 
 
 class ValidationError(PyreError):
+    code = "PYRE-VALIDATION"
     def __init__(self, fields):
         super().__init__("validation failed: %s" % ", ".join(sorted(fields)))
         self.fields = fields
