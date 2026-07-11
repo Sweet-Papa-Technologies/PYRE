@@ -4,6 +4,39 @@ Locked decisions from the requirements doc (§11) are not repeated here.
 This file holds the Phase-0 pins that the spec required to be confirmed at
 build time, plus measured numbers.
 
+## Release 1.3.0 (2026-07-11) — vNext feature release
+
+First release since 1.2.1 (which was security-only). Adds the vNext opt-in
+modules and a correctness pass over them. Compiled under Kybra 0.7.1 and
+verified end-to-end on a local replica and on mainnet.
+
+**New modules (all opt-in; nothing added to the default canister surface):**
+- `pyre.tasks` — durable interval/once timers backed by stable KV, restored
+  across install/upgrade; overlap policies (skip/queue_one/allow), catch-up,
+  and a bounded async supervisor.
+- `pyre.xnet` + `pyre candid` — cross-canister calls over a generated,
+  deterministic Candid client (bounded `.did` parser + codegen), with
+  principal-checksum validation, request/reply size guards, and cycles/notify.
+- `pyre.assets` — generalized chunked asset store in stable memory with
+  immutable content-addressed generations, verified atomic publication, HTTP
+  ranges, >1.8 MB streaming, three quota levels, and bounded GC.
+- `pyre.analytics` — pure-Python, deterministic table/group-by/pivot/join with
+  explicit cardinality limits.
+- `pyre audit` — dependency/source auditor (AST + `importlib.metadata`) with
+  stable JSON and exit codes; flags native/non-pure/host-only/RustPython-gap
+  packages and secret literals.
+- Internals: injectable platform adapter, deterministic lifecycle coordinator,
+  versioned stable-key namespaces, and an in-process testing client.
+
+**Correctness fixes over the above (each with a regression test):** Candid text
+codec now round-trips non-ASCII (`\u{...}`/byte escapes, not JSON `\uXXXX`);
+candid parser resolves aliases in linear time and caps nesting; task schedule
+changes reconcile on upgrade; asset ranges index by the manifest's chunk size,
+clamp an over-long end (RFC 7233), and republished generations survive GC;
+identical content re-uploads after delete; audit no longer mangles package
+names; analytics pivot rejects an index/column name collision. Full suite:
+**426 passing**.
+
 ## CDK choice (pinned 2026-07-01)
 
 | Fact | Value |
