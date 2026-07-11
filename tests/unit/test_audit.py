@@ -85,3 +85,22 @@ def test_cli_missing_explicit_paths_are_configuration_errors(tmp_path, capsys):
     assert cli.main(["audit", str(tmp_path / "missing.txt")]) == 3
     assert "does not exist" in capsys.readouterr().err
     assert cli.main(["audit", "--canister", str(tmp_path / "missing-src")]) == 3
+
+
+def test_editable_prefix_strip_does_not_mangle_package_names(tmp_path):
+    # regression: lstrip("-e ") stripped the char set {-, e, space}, turning
+    # "eventlet" into "ventlet" and silently skipping its native-code scan.
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text("eventlet==0.33.0\n", encoding="utf-8")
+    report, _ = run(requirements=str(requirements), strict=False)
+    packages = {item.get("package") for item in report["findings"] if item.get("package")}
+    assert "eventlet" in packages
+    assert "ventlet" not in packages
+
+
+def test_real_editable_prefix_is_still_stripped(tmp_path):
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text("-e example-pkg\n", encoding="utf-8")
+    report, _ = run(requirements=str(requirements), strict=False)
+    packages = {item.get("package") for item in report["findings"] if item.get("package")}
+    assert "example-pkg" in packages

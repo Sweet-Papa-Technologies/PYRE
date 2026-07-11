@@ -118,7 +118,10 @@ def audit_requirements(path):
         if not line or line.startswith("#"):
             continue
         requirement = line.split(";", 1)[0].strip()
-        package_match = re.match(r"([A-Za-z0-9_.-]+)", requirement.lstrip("-e ").strip())
+        # Strip only a real -e/--editable prefix. `lstrip("-e ")` would strip the
+        # character *set* {-, e, space}, mangling names like "eventlet" -> "ventlet".
+        stripped = re.sub(r"^(?:-e|--editable)\s+", "", requirement)
+        package_match = re.match(r"([A-Za-z0-9_.-]+)", stripped.strip())
         package = package_match.group(1).lower().replace("_", "-") if package_match else None
         if line.startswith(("-e ", "--editable")):
             findings.append(_finding("PYRE-AUDIT-EDITABLE", "warning", "%s:%d %s" % (path, lineno, line), "Use an immutable pinned distribution for canister builds."))

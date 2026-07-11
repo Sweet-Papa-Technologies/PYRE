@@ -117,7 +117,15 @@ class ChunkStore:
         if existing:
             comparable = dict(existing); comparable["finalized"] = False
             if comparable != desired: raise AssetConflict("session id already describes another upload")
-            return dict(existing)
+            if not existing["finalized"]:
+                return dict(existing)  # resume an in-progress upload
+            live = kv.get(self._manifest_key(asset_id))
+            if live and live.get("generation") == existing["generation"]:
+                return dict(existing)  # already published and still live: idempotent
+            # The generation was deleted or superseded, so its finalized session
+            # is stale. Fall through to reopen a fresh session; otherwise
+            # identical content could never be re-uploaded (put_chunk would
+            # reject the finalized session).
         kv.set(self._session_key(session_id), desired)
         return dict(desired)
 
@@ -153,6 +161,11 @@ class ChunkStore:
         old = kv.get(self._manifest_key(session["asset_id"]))
         manifest = {key: session[key] for key in ("schema", "asset_id", "size", "sha256", "content_type", "generation", "chunks", "chunk_size")}
         kv.set(self._manifest_key(session["asset_id"]), manifest)
+        # Generations are content-deterministic and chunks are shared/immutable,
+        # so re-publishing a previously-superseded generation makes it live
+        # again. Clear any pending GC tombstone for it or GC would delete the
+        # now-live chunks.
+        kv.delete(self._key("garbage", manifest["generation"]))
         if old and old.get("generation") != manifest["generation"]:
             # Publication stays atomic; the now-unreferenced generation is
             # reclaimed later in bounded GC batches.
@@ -256,9 +269,9 @@ class ChunkStore:
                             "complete": complete})
         return results
 
-    def token(self, asset_id, generation, next_chunk, start=0, end=None):
+    def token(self, asset_id, generation, next_chunk, start=0, end=None, chunk_size=None):
         payload = {"v": 1, "n": self.namespace, "a": asset_id, "g": generation,
-                   "i": int(next_chunk), "c": self.chunk_size}
+                   "i": int(next_chunk), "c": int(chunk_size) if chunk_size is not None else self.chunk_size}
         if start: payload["s"] = int(start)
         if end is not None: payload["e"] = int(end)
         return base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()).decode().rstrip("=")

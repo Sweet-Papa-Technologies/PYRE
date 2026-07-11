@@ -116,3 +116,36 @@ def test_generalized_upload_routes_are_resumable_and_finalize():
                             json_body={"session_id": session["session_id"]}).json()
     assert finalized["asset"]["sha256"] == manifest["sha256"]
     assert store.read("clip") == body
+
+
+def _finalize_at(namespace, asset_id, body, chunk_size):
+    store = AssetStore(namespace, chunk_size=chunk_size)
+    state = store.begin(asset_id, size=len(body), sha256=hashlib.sha256(body).hexdigest(),
+                        content_type="application/octet-stream")
+    for index in range(state["chunks"]):
+        store.put_chunk(state["session_id"], index, body[index * chunk_size:(index + 1) * chunk_size])
+    store.finalize(state["session_id"])
+    return store
+
+
+def test_range_indexes_by_manifest_chunk_size_not_store_config():
+    # regression: response() indexed chunks by the live store's chunk_size, so a
+    # store rebuilt with a different chunk_size served corrupted bytes.
+    body = bytes(range(256)) * 20  # 5120 bytes
+    _finalize_at("media", "f", body, 1024)
+    serving = AssetStore("media", chunk_size=2048)  # different config, same data
+    response = serving.response("f", request=Request("GET", "/f", headers={"range": "bytes=3000-3100"}))
+    assert response.status == 206
+    assert bytes(response.body) == body[3000:3072]  # first chunk's slice, correct bytes
+
+
+def test_range_end_past_eof_is_clamped_not_416():
+    # regression: a concrete last-byte-pos >= size returned 416; RFC 7233 clamps.
+    store = _finalize_at("clips", "v", b"x" * 2000, 1024)
+    response = store.response("v", request=Request("GET", "/v", headers={"range": "bytes=0-99999"}))
+    assert response.status == 206
+    parts, token = [response.body], response.streaming_token
+    while token:
+        result = streaming_callback(token); parts.append(result["body"])
+        token = result["token"]["arbitrary_data"] if result["token"] else None
+    assert b"".join(parts) == b"x" * 2000

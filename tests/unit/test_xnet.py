@@ -6,7 +6,7 @@ from pyre._runtime import ctx
 from pyre.candid import CandidDecodeError, MethodSpec, ServiceSpec, TypeSpec
 from pyre.xnet import (
     CanisterClient, PayloadTooLarge, QueryContextCallError, UnknownMethod,
-    _candid_text, _decode_candid_text,
+    _candid_text, _decode_candid_text, _text_literal, _unescape_text,
 )
 
 
@@ -117,3 +117,26 @@ def test_runtime_decode_handles_annotations_blob_and_arity():
                                (TypeSpec("nat64"), TypeSpec("blob"))) == (42, b"\x00\xff")
     with pytest.raises(CandidDecodeError, match="too many"):
         _decode_candid_text('(1, 2)', (TypeSpec("nat"),))
+
+
+def test_text_codec_round_trips_unicode_and_uses_candid_escapes():
+    # regression: json.dumps(ensure_ascii=True) emitted invalid \uXXXX; Candid
+    # needs \u{...}. Encoder must round-trip through the decoder for any str.
+    for original in ["café ☃", 'q"u\\o\ttes', "日本語 🚀", "plain", ""]:
+        assert _unescape_text(_text_literal(original)) == original
+    assert "\\u{e9}" in _text_literal("é")
+    assert "\\u00e9" not in _text_literal("é")
+
+
+def test_decode_accepts_replica_byte_and_scalar_escapes():
+    text = (TypeSpec("text"),)
+    # replica encodes non-ASCII as \XX UTF-8 byte escapes or \u{...} scalars
+    assert _decode_candid_text(r'("caf\c3\a9")', text) == ("café",)
+    assert _decode_candid_text(r'("\u{2603}")', text) == ("☃",)
+    with pytest.raises(CandidDecodeError):
+        _decode_candid_text(r'("\zz")', text)
+
+
+def test_numeric_literals_accept_underscore_digit_groups():
+    assert _decode_candid_text("(1_000_000 : nat)", (TypeSpec("nat"),)) == (1_000_000,)
+    assert _decode_candid_text("(1_000.5 : float64)", (TypeSpec("float64"),)) == (1000.5,)

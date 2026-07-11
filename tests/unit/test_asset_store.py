@@ -92,3 +92,28 @@ def test_replacement_queues_old_generation_for_bounded_gc():
     assert result["generation"] == old["generation"] and result["complete"] is False
     while not store.garbage_collect(limit=10)[0]["complete"]:
         pass
+
+
+def test_republished_generation_is_not_destroyed_by_gc():
+    # regression: A->B->A re-publishes A's deterministic generation while a
+    # stale garbage tombstone for A (queued during A->B) still exists; GC then
+    # deleted the now-live chunks. finalize must clear that tombstone.
+    store = ChunkStore("media", chunk_size=1024)
+    body_a = b"A" * 1500
+    upload(store, "asset", body_a, "sa")
+    upload(store, "asset", b"B" * 1500, "sb")
+    upload(store, "asset", body_a, "sa2")  # re-publish A (identical content)
+    store.garbage_collect(limit=1000)
+    assert store.read("asset") == body_a
+
+
+def test_identical_content_can_be_reuploaded_after_delete():
+    # regression: the finalized upload session persisted after delete, so
+    # re-uploading identical bytes hit "upload session is finalized".
+    store = ChunkStore("media", chunk_size=1024)
+    body = b"v" * 500
+    upload(store, "note", body, "s1")
+    while not store.delete("note")["complete"]:
+        pass
+    upload(store, "note", body, "s1")
+    assert store.read("note") == body

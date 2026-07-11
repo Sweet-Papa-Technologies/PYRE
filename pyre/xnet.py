@@ -90,17 +90,72 @@ class _RawCall:
         return bytes(value)
 
 
+def _text_literal(value):
+    """Encode a str as a Candid text literal.
+
+    Candid text is a UTF-8 byte string; its literal grammar accepts the named
+    escapes, ``\\XX`` byte escapes, and ``\\u{...}`` scalar escapes — but NOT
+    JSON's ``\\uXXXX`` form. Non-ASCII characters are emitted as ``\\u{...}``
+    so the reviewed codec accepts them (JSON's ``ensure_ascii`` would emit an
+    invalid ``\\uXXXX``).
+    """
+    if not isinstance(value, str):
+        raise CandidEncodeError("text must be str")
+    out = ['"']
+    for char in value:
+        point = ord(char)
+        if char == '"': out.append('\\"')
+        elif char == "\\": out.append("\\\\")
+        elif char == "\n": out.append("\\n")
+        elif char == "\r": out.append("\\r")
+        elif char == "\t": out.append("\\t")
+        elif 0x20 <= point <= 0x7E: out.append(char)
+        else: out.append("\\u{%x}" % point)
+    out.append('"')
+    return "".join(out)
+
+
+def _unescape_text(token):
+    """Decode a Candid text literal token (including its quotes) to a str."""
+    if not (len(token) >= 2 and token[0] == '"' and token[-1] == '"'):
+        raise CandidDecodeError("expected quoted text")
+    body, raw, index = token[1:-1], bytearray(), 0
+    while index < len(body):
+        char = body[index]
+        if char != "\\":
+            raw.extend(char.encode("utf-8")); index += 1; continue
+        index += 1
+        if index >= len(body): raise CandidDecodeError("dangling escape in Candid text")
+        escape = body[index]
+        simple = {"n": 0x0A, "r": 0x0D, "t": 0x09, "\\": 0x5C, '"': 0x22, "'": 0x27}
+        if escape in simple:
+            raw.append(simple[escape]); index += 1
+        elif escape == "u":
+            if index + 1 >= len(body) or body[index + 1] != "{":
+                raise CandidDecodeError("invalid \\u escape in Candid text")
+            close = body.find("}", index + 2)
+            if close == -1: raise CandidDecodeError("unterminated \\u{ escape")
+            try: point = int(body[index + 2:close], 16)
+            except ValueError: raise CandidDecodeError("invalid \\u{} hex in Candid text")
+            raw.extend(chr(point).encode("utf-8")); index = close + 1
+        else:
+            try: raw.append(int(body[index:index + 2], 16)); index += 2
+            except ValueError: raise CandidDecodeError("invalid escape in Candid text")
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise CandidDecodeError("Candid text is not valid UTF-8")
+
+
 def _candid_text(spec, value):
     """Deterministic textual Candid accepted by Kybra's reviewed codec."""
     kind = spec.kind
     if kind == "null": return "null"
     if kind == "bool": return "true" if value else "false"
     if kind == "text":
-        import json
-        return json.dumps(value, ensure_ascii=True)
+        return _text_literal(value)
     if kind == "principal":
-        import json
-        return "principal " + json.dumps(value)
+        return "principal " + _text_literal(value)
     if kind == "blob": return "blob \"" + "".join("\\%02x" % byte for byte in value) + "\""
     if kind in ("nat", "int", "nat8", "nat16", "nat32", "nat64", "int8", "int16", "int32", "int64", "float32", "float64"):
         return str(value)
@@ -117,7 +172,7 @@ def _candid_text(spec, value):
 
 
 _VALUE_TOKEN = re.compile(
-    r'\s+|"(?:\\.|[^"\\])*"|[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?|'
+    r'\s+|"(?:\\.|[^"\\])*"|[-+]?\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][-+]?\d[\d_]*)?|'
     r'[A-Za-z_][A-Za-z0-9_]*|[{}(),;=:]', re.S
 )
 
@@ -187,19 +242,16 @@ class _ValueParser:
             return token == "true"
         if kind == "principal":
             self.expect("principal"); token = self.take()
-            if not token.startswith('"'): raise CandidDecodeError("principal must be quoted")
-            return json.loads(token)
+            return _unescape_text(token)
         if kind == "blob":
             return self.value(type(spec)("vec", inner=type(spec)("nat8")))
         if kind == "text":
-            token = self.take()
-            if not token.startswith('"'): raise CandidDecodeError("expected quoted text")
-            return json.loads(token)
+            return _unescape_text(self.take())
         if kind in ("float32", "float64"):
-            try: return float(self.take())
+            try: return float(self.take().replace("_", ""))
             except ValueError: raise CandidDecodeError("expected floating-point number")
         if kind in ("nat", "int", "nat8", "nat16", "nat32", "nat64", "int8", "int16", "int32", "int64"):
-            try: return int(self.take())
+            try: return int(self.take().replace("_", ""))
             except ValueError: raise CandidDecodeError("expected integer")
         raise CandidDecodeError("unsupported decoded Candid type %s" % kind)
 
