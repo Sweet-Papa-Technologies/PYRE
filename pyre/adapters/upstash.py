@@ -39,6 +39,7 @@ from pyre.compat.urllib_request import default_transform
 
 class UpstashError(PyreError):
     """Upstash returned an error (or the command was rejected locally)."""
+    code = "PYRE-UPSTASH"
 
     status = 502
 

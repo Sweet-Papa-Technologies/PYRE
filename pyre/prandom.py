@@ -65,6 +65,7 @@ RAW_RAND_BYTES = 32
 
 class RawRandInQueryContext(PyreError):
     """raw_rand is an inter-canister call: update context only."""
+    code = "PYRE-RANDOM-QUERY"
 
 
 # -- canister id (cheap extra seed material, cached once) ----------------------

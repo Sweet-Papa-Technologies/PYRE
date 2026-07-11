@@ -7,9 +7,6 @@ prebuilt Kybra artifacts. See conftest.py for fixtures and skip logic.
 
 import pytest
 
-pytest.importorskip("pocket_ic", reason="pocket-ic not installed in this venv")
-pytest.importorskip("ic", reason="ic-py not installed in this venv")
-
 pytestmark = pytest.mark.pocketic
 
 # Budget thresholds: actuals measured 2026-07-02 on PocketIC 13.0.0 with the

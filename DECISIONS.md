@@ -813,3 +813,84 @@ produces (Google won't sign headlessly) — that final click is the user's.
 Comment loop (submit→pending→moderate→certified) proven with the gated dev
 provider locally; on mainnet it runs the moment a real session exists.
 Cost: 4.96T cycles remain (native upgrades were ~free).
+# PYRE vNext analytics experiment (2026-07-11)
+
+The first analytics release uses a narrow, owned, pure-Python `Table` rather
+than vendoring a dataframe package. Candidate packages were rejected for this
+phase because none had already-established RustPython/Kybra compatibility,
+measured Wasm/instruction costs, deterministic serialization guarantees, and a
+dependency/security update process sufficient to label them compatible. An
+unknown package is not treated as compatible. The owned implementation adds no
+dependency, is MIT-covered with PYRE, and keeps its bounded API reviewable.
+
+The module is explicitly experimental and does not claim pandas compatibility.
+Every allocation-heavy operation has configurable row, column, group, join,
+and pivot limits. Persistence is exposed as bounded record batches rather than
+one unbounded JSON value. Host CPython 3.12.8 measurements for a
+filter→group(50)→aggregate→sort pipeline were:
+
+| Rows | Host duration |
+|---:|---:|
+| 100 | 0.304 ms |
+| 1,000 | 1.839 ms |
+| 10,000 | 18.620 ms |
+
+These are developer-machine reference measurements, not canister instruction
+claims. Wasm size and PocketIC instruction measurements remain required before
+release; the current sandbox cannot build Kybra because its package index is
+unreachable.
+
+## vNext full and slim wheel profiles (maintainer approval, 2026-07-11)
+
+The maintainer explicitly approved moving forward with the normal full vNext
+wheel despite its cumulative increase beyond the specification's default 25%
+wheel-size gate. No feature or source is to be permanently removed to meet that
+threshold. The full wheel remains the default and contains every vNext module.
+
+For applications that do not need the opt-in features, the repository also
+offers a non-destructive slim wheel profile:
+
+```bash
+bash scripts/build_wheel.sh full
+bash scripts/build_wheel.sh slim
+# equivalent: PYRE_BUILD_PROFILE=slim python -m pip wheel . --no-deps --no-build-isolation
+```
+
+The slim build filters analytics, generalized assets, tasks, Candid/xnet,
+testing, and host audit/codegen modules from the wheel build list. It retains
+the core framework, lifecycle/namespace/platform foundation, templates, legacy
+static serving, and CLI. Source files remain present in the repository and full
+source distribution. Invoking an excluded host CLI feature gives exact guidance
+to install the full wheel. This profile changes packaging only; modules are
+already unimported by default and ordinary canister bundles remain opt-in.
+
+Measured against repository `HEAD` with Python 3.12.8 and local, isolated
+setuptools wheel builds:
+
+| Artifact / suite | `HEAD` | vNext |
+|---|---:|---:|
+| Full wheel | 100,189 bytes | 126,271 bytes (+26.03%, approved) |
+| Slim wheel | 100,189 bytes | 105,313 bytes (+5.11%) |
+| Unit tests | 331 passed, 1 skipped | 376 passed, 1 skipped |
+| Timed unit command (wall) | 3.57 s | 1.66 s |
+
+Timing includes process/collection noise and is informational, not a regression
+claim. Direct wheel inspection and isolated installs verified that the full
+profile contains all vNext modules, while the slim profile excludes exactly the
+documented modules and still imports `pyre`, `App`, and legacy `static`.
+
+## Deterministic external-tool fallback (2026-07-11)
+
+Missing Kybra, `pocket-ic`/`ic-py`, the PocketIC server, or built Wasm no longer
+causes repository verification to skip or require a download. The test harness
+uses self-contained Kybra modules and an `OfflinePocketICClient` that exercises
+real PYRE dispatch, update/query honesty, dev stable state, lifecycle upgrades,
+certification wiring, and deterministic time. Every fallback result is labeled
+`MOCK` and explicitly does **not** claim Wasm execution, replica consensus, BLS
+verification, real instructions/cycles, or protocol compatibility.
+
+Without Wasm, the size gate uses a 750,000-byte Python-source ceiling; the
+measured full vNext footprint was 650,344 bytes. This is a deterministic
+regression proxy only. When real artifacts exist, existing per-canister Wasm
+thresholds take precedence. The same real-first rule applies to PocketIC and
+local E2E tests.

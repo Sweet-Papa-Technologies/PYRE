@@ -67,6 +67,18 @@ deploy venv to be **active**. First build compiles a Rust toolchain
    names (Kybra flattens all modules to top-level basenames — a user
    `app.py` is fine, but never create `random.py`, `http.py`, `uuid.py`…).
    `pyre new`/`pyre dev` warn on reserved names.
+8. **vNext modules are opt-in.** Import `pyre.tasks`, `pyre.candid`,
+   `pyre.xnet`, `pyre.assets`, or experimental `pyre.analytics` explicitly;
+   do not add them to eager package imports. Framework state uses versioned
+   `__pyre:<subsystem>:<schema>:` keys in the existing stable map.
+9. **Timers and xnet are update-only and not transactions.** Timer handles
+   are ephemeral, task callbacks must be idempotent, xnet updates are never
+   retried automatically, and local work around an await is not atomic with
+   the remote call.
+10. **Streaming is public and uncertified in its first milestone.** Never put
+    private/authenticated media behind the gateway callback; it does not
+    replay application middleware. Refresh generated `main.py` to expose the
+    streaming callback before using `pyre.assets`.
 
 ## Canister project shape
 
@@ -120,6 +132,16 @@ dfx deploy --network ic                 # mainnet (funding: see concepts.md)
   [docs/adapters.md](https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/docs/adapters.md)
   (read the amplification section before any write path).
 - Extending with Rust: [docs/extending-with-rust.md](https://github.com/Sweet-Papa-Technologies/PYRE/blob/main/docs/extending-with-rust.md).
+- Persistent work: `@tasks.every(...)` / `@tasks.after(...)`; no exactly-once
+  claim. See `docs/tasks.md`.
+- Cross-canister calls: generate metadata with `pyre candid generate`, then
+  use `xnet.CanisterClient`; 1.9 MB request/reply guard. See
+  `docs/candid-xnet.md`.
+- Generalized assets: `AssetStore`, resumable single-file uploads, bounded
+  deletion, and public streaming. See `docs/assets.md`.
+- Host safety net: `PyreTestClient.from_app(app)` and `pyre audit --strict`.
+  Keep `pyre.testing`, pytest, and PocketIC imports outside canister source.
+- Experimental analytics: bounded immutable `Table`; not pandas-compatible.
 
 ## Costs & operations (mainnet-measured; details in DECISIONS.md)
 

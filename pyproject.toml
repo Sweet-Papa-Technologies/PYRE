@@ -33,3 +33,6 @@ include = ["pyre*"]
 
 [tool.setuptools.package-data]
 pyre = ["templates/*/**/*", "templates/*/**/.*"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["*.pyc", "*.pyo", "__pycache__/*", "**/__pycache__/*"]

@@ -80,11 +80,13 @@ class Request:
 class Response:
     """An HTTP response returned by a PYRE handler."""
 
-    def __init__(self, body=b"", status=200, headers=None, content_type=None):
+    def __init__(self, body=b"", status=200, headers=None, content_type=None,
+                 streaming_token=None):
         if isinstance(body, str):
             body = body.encode("utf-8")
         self.body = bytes(body)
         self.status = int(status)
+        self.streaming_token = streaming_token
         # keep insertion order; list of (name, value)
         if headers is None:
             self.headers = []

@@ -1,6 +1,7 @@
 """The `pyre` command: `pyre new <name>` and `pyre dev [app.py]`."""
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -15,7 +16,8 @@ RESERVED_BASENAMES = {
     "application", "http_types", "routing", "gateway", "kv", "data", "auth",
     "cors", "validation", "certification", "transform", "outcall", "errors", "static",
     "dev", "cli", "_runtime", "_stubs", "urllib_request",
-    "prandom", "ptime", "puuid",
+    "prandom", "ptime", "puuid", "_platform", "_lifecycle", "_namespace",
+    "tasks", "candid", "xnet", "testing", "assets", "analytics",
     # kybra-internal modules
     "http", "basic", "bitcoin", "tecdsa", "principal",
 }
@@ -280,11 +282,13 @@ def cmd_assets_push(args):
         is_compressible,
     )
 
+    if getattr(args, "namespace", None):
+        return cmd_generalized_asset_push(args)
     dist = os.path.abspath(args.dist)
     if not os.path.isdir(dist):
         print("error: %s is not a directory" % dist, file=sys.stderr)
         return 1
-    admin = args.url.rstrip("/") + args.admin_prefix
+    admin = args.url.rstrip("/") + (args.admin_prefix or "/_pyre/static")
 
     # 1. collect local files (gzipping compressible ones where it helps)
     local = []
@@ -402,6 +406,186 @@ def cmd_assets_push(args):
     return 0
 
 
+def cmd_generalized_asset_push(args):
+    """Upload one file through the generalized resumable asset protocol."""
+    import base64
+    import hashlib
+
+    from pyre.static import content_type_for
+
+    path = os.path.abspath(args.dist)
+    if not os.path.isfile(path):
+        print("error: generalized --namespace uploads currently require one file", file=sys.stderr)
+        return 1
+    asset_id = getattr(args, "asset_id", None) or os.path.basename(path)
+    with open(path, "rb") as handle:
+        data = handle.read()
+    digest = hashlib.sha256(data).hexdigest()
+    admin = args.url.rstrip("/") + (args.admin_prefix or "/_pyre/assets")
+    manifest = {"asset_id": asset_id, "size": len(data), "sha256": digest,
+                "content_type": content_type_for(asset_id)}
+    status, result = _push_call("POST", admin + "/manifest", args.token, manifest,
+                                connect=args.connect)
+    if status != 200 or not result:
+        print("error: generalized asset manifest rejected (HTTP %d): %s" % (status, result), file=sys.stderr)
+        return 2
+    session = result["session"]; chunk_size = int(result["chunk_size"])
+    present = set(int(index) for index in result.get("present", []))
+    sent_chunks = wire_bytes = skipped_bytes = 0
+    for index in range(session["chunks"]):
+        piece = data[index * chunk_size:(index + 1) * chunk_size]
+        if index in present:
+            skipped_bytes += len(piece); continue
+        payload = {"session_id": session["session_id"], "index": index,
+                   "data": base64.b64encode(piece).decode("ascii")}
+        status, reply = _push_call("POST", admin + "/chunk", args.token, payload,
+                                   connect=args.connect)
+        if status != 200:
+            print("error: generalized chunk %d rejected (HTTP %d): %s" % (index, status, reply), file=sys.stderr)
+            return 2
+        sent_chunks += 1; wire_bytes += len(piece)
+    status, result = _push_call("POST", admin + "/finalize", args.token,
+                                {"session_id": session["session_id"]}, connect=args.connect)
+    if status != 200:
+        print("error: generalized finalize failed (HTTP %d): %s" % (status, result), file=sys.stderr)
+        return 2
+    print("pushed %s namespace=%s uploaded_bytes=%d wire_bytes=%d chunks=%d "
+          "skipped_bytes=%d sha256=%s asset_id=%s" % (
+              path, args.namespace, len(data), wire_bytes, sent_chunks,
+              skipped_bytes, digest, asset_id))
+    return 0
+
+
+def _asset_management_call(args, endpoint, payload=None):
+    admin = args.url.rstrip("/") + args.admin_prefix
+    method = "GET" if payload is None else "POST"
+    try:
+        status, result = _push_call(method, admin + endpoint, args.token, payload,
+                                    connect=args.connect)
+    except Exception as exc:
+        print("error: asset request failed: %s" % exc, file=sys.stderr)
+        return None, 3
+    if status == 401:
+        print("error: token rejected (401) by %s" % admin, file=sys.stderr)
+        return None, 2
+    if status >= 300 or result is None:
+        print("error: asset request returned HTTP %d: %s" % (status, result), file=sys.stderr)
+        return None, 2
+    return result, 0
+
+
+def cmd_assets_list(args):
+    result, code = _asset_management_call(args, "/list")
+    if code: return code
+    assets = result.get("assets", [])
+    if isinstance(assets, dict): assets = [dict(value, asset_id=name) for name, value in assets.items()]
+    for item in sorted(assets, key=lambda value: value.get("asset_id", "")):
+        print("%s\t%d\t%s" % (item.get("asset_id"), item.get("size", 0), item.get("sha256", "")))
+    print("%d asset(s)" % len(assets))
+    return 0
+
+
+def cmd_assets_verify(args):
+    result, code = _asset_management_call(args, "/verify", {"asset_id": args.asset_id})
+    if code: return code
+    print("%s: %s (%d bytes, sha256 %s)" % (
+        args.asset_id, "verified" if result.get("ok") else "FAILED",
+        result.get("size", 0), result.get("sha256", "")))
+    return 0 if result.get("ok") else 2
+
+
+def cmd_assets_delete(args):
+    total = 0
+    while True:
+        result, code = _asset_management_call(
+            args, "/delete", {"asset_id": args.asset_id, "limit": args.batch_size}
+        )
+        if code: return code
+        total += int(result.get("removed_chunks", 0))
+        if result.get("complete"): break
+    print("deleted %s (%d chunk(s))" % (args.asset_id, total))
+    return 0
+
+
+def cmd_audit(args):
+    """Run deterministic offline compatibility checks."""
+    try:
+        from pyre._audit import run
+    except ModuleNotFoundError as exc:
+        if exc.name == "pyre._audit":
+            print("error: pyre audit is excluded from the slim wheel; install the full pyre-icp wheel", file=sys.stderr)
+            return 3
+        raise
+
+    requirements = args.requirements
+    if requirements is None and os.path.isfile("requirements.txt"):
+        requirements = "requirements.txt"
+    if requirements is not None and not os.path.isfile(requirements):
+        print("error: requirements file does not exist: %s" % requirements, file=sys.stderr)
+        return 3
+    if args.canister is not None and not os.path.exists(args.canister):
+        print("error: canister source path does not exist: %s" % args.canister, file=sys.stderr)
+        return 3
+    report, exit_code = run(
+        requirements=requirements, canister=args.canister, strict=args.strict
+    )
+    rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as handle:
+            handle.write(rendered)
+    if args.format == "json":
+        if not args.output:
+            sys.stdout.write(rendered)
+    else:
+        print("PYRE audit: %s (%d finding(s))" % (report["status"], len(report["findings"])))
+        for finding in report["findings"]:
+            print("[%s] %s: %s" % (finding["severity"], finding["code"], finding["evidence"]))
+            print("  remediation: %s" % finding["remediation"])
+        if args.output:
+            print("JSON report: %s" % args.output)
+    return exit_code
+
+
+def cmd_candid_check(args):
+    try:
+        from pyre._candid_parser import parse
+    except ModuleNotFoundError as exc:
+        if exc.name == "pyre._candid_parser":
+            print("error: Candid tooling is excluded from the slim wheel; install the full pyre-icp wheel", file=sys.stderr)
+            return 3
+        raise
+    try:
+        with open(args.input, encoding="utf-8") as handle:
+            service = parse(handle.read())
+    except (OSError, ValueError) as exc:
+        print("error: %s" % exc, file=sys.stderr)
+        return 2
+    print("valid Candid service: %d method(s)" % len(service.methods))
+    return 0
+
+
+def cmd_candid_generate(args):
+    try:
+        from pyre._candid_codegen import generate
+    except ModuleNotFoundError as exc:
+        if exc.name == "pyre._candid_codegen":
+            print("error: Candid tooling is excluded from the slim wheel; install the full pyre-icp wheel", file=sys.stderr)
+            return 3
+        raise
+    try:
+        with open(args.input, encoding="utf-8") as handle:
+            output = generate(handle.read(), args.name)
+        parent = os.path.dirname(os.path.abspath(args.output))
+        os.makedirs(parent, exist_ok=True)
+        with open(args.output, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(output)
+    except (OSError, ValueError) as exc:
+        print("error: %s" % exc, file=sys.stderr)
+        return 2
+    print("generated %s" % args.output)
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="pyre", description="PYRE — Python on the Internet Computer")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -421,6 +605,25 @@ def main(argv=None):
     p_dev.add_argument("--port", type=int, default=8000)
     p_dev.set_defaults(func=cmd_dev)
 
+    p_audit = sub.add_parser("audit", help="audit canister dependencies and source compatibility")
+    p_audit.add_argument("requirements", nargs="?", help="requirements file (default: requirements.txt if present)")
+    p_audit.add_argument("--canister", help="canister source file or directory")
+    p_audit.add_argument("--strict", action="store_true", help="fail on warnings")
+    p_audit.add_argument("--format", choices=("text", "json"), default="text")
+    p_audit.add_argument("--output", help="write the stable JSON report to this path")
+    p_audit.set_defaults(func=cmd_audit)
+
+    p_candid = sub.add_parser("candid", help="check Candid interfaces and generate runtime specifications")
+    candid_sub = p_candid.add_subparsers(dest="candid_command", required=True)
+    p_candid_check = candid_sub.add_parser("check", help="validate a .did interface")
+    p_candid_check.add_argument("input")
+    p_candid_check.set_defaults(func=cmd_candid_check)
+    p_candid_generate = candid_sub.add_parser("generate", help="generate a deterministic Python service specification")
+    p_candid_generate.add_argument("input")
+    p_candid_generate.add_argument("--name", required=True)
+    p_candid_generate.add_argument("--output", required=True)
+    p_candid_generate.set_defaults(func=cmd_candid_generate)
+
     p_assets = sub.add_parser("assets", help="manage a canister's static asset store")
     assets_sub = p_assets.add_subparsers(dest="assets_command", required=True)
     p_push = assets_sub.add_parser(
@@ -434,10 +637,12 @@ def main(argv=None):
         "http://<id>.localhost:4943 (replica), https://<id>.icp0.io (mainnet)",
     )
     p_push.add_argument("--token", required=True, help="bearer token for the admin routes")
+    p_push.add_argument("--namespace", help="use generalized asset storage for a single file")
+    p_push.add_argument("--asset-id", help="logical generalized asset id (default: filename)")
     p_push.add_argument(
         "--admin-prefix",
-        default="/_pyre/static",
-        help="where static.admin_routes() is mounted (default: /_pyre/static)",
+        default=None,
+        help="admin mount (default: /_pyre/static, or /_pyre/assets with --namespace)",
     )
     p_push.add_argument("--no-gzip", action="store_true", help="skip gzip variants")
     p_push.add_argument(
@@ -449,6 +654,21 @@ def main(argv=None):
         "e.g. --connect 127.0.0.1:4943)",
     )
     p_push.set_defaults(func=cmd_assets_push)
+
+    def management_arguments(command):
+        command.add_argument("--url", required=True, help="app base URL")
+        command.add_argument("--token", required=True, help="bearer token")
+        command.add_argument("--admin-prefix", default="/_pyre/assets")
+        command.add_argument("--connect", default=None, metavar="HOST:PORT")
+
+    p_list = assets_sub.add_parser("list", help="list generalized assets")
+    management_arguments(p_list); p_list.set_defaults(func=cmd_assets_list)
+    p_verify = assets_sub.add_parser("verify", help="verify a generalized asset")
+    p_verify.add_argument("asset_id"); management_arguments(p_verify)
+    p_verify.set_defaults(func=cmd_assets_verify)
+    p_delete = assets_sub.add_parser("delete", help="delete a generalized asset in bounded batches")
+    p_delete.add_argument("asset_id"); p_delete.add_argument("--batch-size", type=int, default=25)
+    management_arguments(p_delete); p_delete.set_defaults(func=cmd_assets_delete)
 
     args = parser.parse_args(argv)
     return args.func(args)

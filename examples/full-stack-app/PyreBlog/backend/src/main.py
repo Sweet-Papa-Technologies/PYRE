@@ -30,11 +30,20 @@ from kybra import (
 from kybra.canisters.management import HttpResponse, HttpTransformArgs
 
 import pyre.kv
+from pyre._lifecycle import register, run_init, run_post_upgrade
 from pyre import oidc
 from pyre.gateway import dispatch_query, dispatch_update
 from pyre.transform import transform_management_response
 
 from app import app, sync_certified_routes
+
+
+def _restore_blog_routes():
+    sync_certified_routes()
+    app.recertify()
+
+
+register("pyrepress.routes", _restore_blog_routes, order=50)
 
 # pyre.kv's stable-memory backing. Declared here (not inside pyre) because
 # Kybra registers StableBTreeMaps by static analysis of the canister source.
@@ -94,19 +103,12 @@ class HttpGatewayResponse(Record):
 
 @init
 def pyre_init() -> void:
-    # Rebuild per-post certified routes from stored data, then certify route
-    # snapshots (and the skip-certification wildcard) so query responses
-    # verify against certified data from the first request.
-    sync_certified_routes()
-    app.recertify()
+    run_init(app)
 
 
 @post_upgrade
 def pyre_post_upgrade() -> void:
-    # Dynamic per-post routes live in heap memory, not the code, so they must
-    # be rebuilt from the (upgrade-surviving) stable data after every upgrade.
-    sync_certified_routes()
-    app.recertify()
+    run_post_upgrade(app)
 
 
 @query

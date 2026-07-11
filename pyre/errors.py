@@ -8,6 +8,7 @@ cryptic canister trap (see requirements §5.6, §6.2).
 
 class PyreError(Exception):
     """Base class for all PYRE errors."""
+    code = "PYRE-ERROR"
 
 
 class BadRequest(PyreError):
@@ -15,6 +16,7 @@ class BadRequest(PyreError):
 
     Raised by Request.json(); the dispatcher converts it to a 400 response.
     """
+    code = "PYRE-BAD-REQUEST"
 
 
 class KvWriteInQueryContext(PyreError):
@@ -23,6 +25,7 @@ class KvWriteInQueryContext(PyreError):
     Query calls on ICP cannot persist state. Mark the route with
     update=True (POST/PUT/DELETE routes are updates by default).
     """
+    code = "PYRE-KV-QUERY-WRITE"
 
 
 class OutcallInQueryContext(PyreError):
@@ -30,6 +33,7 @@ class OutcallInQueryContext(PyreError):
 
     Outcalls can only run in update calls. Mark the route with update=True.
     """
+    code = "PYRE-OUTCALL-QUERY"
 
 
 class ResponseTooLarge(PyreError):
@@ -38,14 +42,17 @@ class ResponseTooLarge(PyreError):
     Raise the max_response_bytes argument to urlopen (each byte costs
     cycles, so keep it as low as your upstream allows).
     """
+    code = "PYRE-OUTCALL-RESPONSE-LARGE"
 
 
 class OutcallFailed(PyreError):
     """The HTTPS outcall was rejected or failed (network, consensus, cycles)."""
+    code = "PYRE-OUTCALL-FAILED"
 
 
 class UpstreamHTTPError(PyreError):
     """Upstream returned a non-2xx status and raise_for_status=True was set."""
+    code = "PYRE-UPSTREAM-HTTP"
 
     def __init__(self, status, response=None):
         super().__init__("upstream returned HTTP %s" % status)

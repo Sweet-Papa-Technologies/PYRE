@@ -34,16 +34,27 @@ def request_from_gateway(req):
 
         request.caller = ic.caller().to_str()
     except Exception:
-        request.caller = None
+        # Host/public testing clients may supply an explicit deterministic
+        # identity. Canister callers still always come from ic.caller above,
+        # so an inbound HTTP field can never spoof this in production.
+        request.caller = req.get("caller")
     return request
 
 
 def response_to_gateway(response, upgrade=None):
+    strategy = None
+    if response.streaming_token is not None:
+        # Generated main.py replaces this callback marker with its statically
+        # declared Kybra Func value. Keeping it plain preserves host safety.
+        strategy = {"Callback": {
+            "callback": "pyre_http_streaming_callback",
+            "token": {"arbitrary_data": response.streaming_token},
+        }}
     return {
         "status_code": response.status,
         "headers": list(response.headers),
         "body": response.body,
-        "streaming_strategy": None,
+        "streaming_strategy": strategy,
         "upgrade": upgrade,
     }
 

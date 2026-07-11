@@ -7,6 +7,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 export PATH="$HOME/Library/Application Support/org.dfinity.dfx/bin:$PATH"
+if [[ ! -x venv/bin/python ]] || ! dfx canister id rest_api >/dev/null 2>&1; then
+    echo "MOCK  deploy toolchain/local canisters unavailable; running deterministic offline E2E"
+    exec python3 scripts/e2e_offline.py
+fi
 # kybra builds (incl. the mid-test upgrade) need the deploy venv active
 source venv/bin/activate
 

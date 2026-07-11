@@ -29,6 +29,7 @@ from kybra import (
 from kybra.canisters.management import HttpResponse, HttpTransformArgs
 
 import pyre.kv
+from pyre._lifecycle import run_init, run_post_upgrade
 from pyre.gateway import dispatch_query, dispatch_update
 from pyre.transform import transform_management_response
 
@@ -88,12 +89,12 @@ class HttpGatewayResponse(Record):
 
 @init
 def pyre_init() -> void:
-    app.recertify()
+    run_init(app)
 
 
 @post_upgrade
 def pyre_post_upgrade() -> void:
-    app.recertify()
+    run_post_upgrade(app)
 
 
 @query

@@ -49,6 +49,7 @@ _config = {
 
 class SigningFailed(PyreError):
     """The management canister rejected or failed the signing call."""
+    code = "PYRE-SIGNING-FAILED"
 
     status = 502
 
